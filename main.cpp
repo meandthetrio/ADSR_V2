@@ -8,24 +8,28 @@
 #include "app_state.h"
 #include "params.h"
 #include "audio_engine.h"
+#include "mem_regions.h"
 #include "ui_logic.h"
 #include "ui_render.h"
 
 using namespace daisy;
 
 // --- Hardware ---
-static DaisyPod hw;
+ADSR2_DTCM static DaisyPod hw;
 
 // --- OLED Types ---
 using PodDisplay = OledDisplay<SSD130xI2c128x64Driver>;
 static PodDisplay display;
 
+ADSR2_SDRAM ADSR2_ALIGN32 static uint32_t g_sdram_test[256];
+static bool g_sdram_ok = false;
+
 // --- UI timing ---
 static uint32_t last_ctrl_ms = 0;
 
 // --- NEW: layered globals ---
-static AppState    g_app;
-static Params      g_params;
+ADSR2_DTCM static AppState g_app;
+ADSR2_DTCM static Params g_params;
 static AudioEngine g_audio;
 static UILogic     g_ui;
 static UIRender    g_render;
@@ -61,6 +65,31 @@ static void InitOled()
     display.Update();
 }
 
+static bool RunSdramTest()
+{
+    const uint32_t pat1 = 0xA5A50000u;
+    const uint32_t pat2 = 0x5A5A0000u;
+    const size_t   n    = sizeof(g_sdram_test) / sizeof(g_sdram_test[0]);
+
+    for(size_t i = 0; i < n; ++i)
+        g_sdram_test[i] = pat1 ^ (uint32_t)i;
+    for(size_t i = 0; i < n; ++i)
+    {
+        if(g_sdram_test[i] != (pat1 ^ (uint32_t)i))
+            return false;
+    }
+
+    for(size_t i = 0; i < n; ++i)
+        g_sdram_test[i] = pat2 + (uint32_t)(i * 3u);
+    for(size_t i = 0; i < n; ++i)
+    {
+        if(g_sdram_test[i] != (pat2 + (uint32_t)(i * 3u)))
+            return false;
+    }
+
+    return true;
+}
+
 int main(void)
 {
     hw.Init();
@@ -74,6 +103,10 @@ int main(void)
     g_audio.Init(hw.AudioSampleRate(), hw.AudioBlockSize());
     g_ui.Init(hw);
     g_render.Init(&display);
+
+    g_sdram_ok    = RunSdramTest();
+    g_app.sdram_ok = g_sdram_ok;
+    g_app.ui_dirty = true;
 
     hw.StartAudio(AudioCallback);
 

@@ -74,13 +74,16 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params)
         dirty = true;
     }
 
-    // External encoder rotate adjusts delay_mix (proof-of-life)
-    const int32_t ext_inc = ext_enc_.Increment();
-    if(ext_inc != 0)
-    {
-        params.targets.delay_mix = Clamp01(params.targets.delay_mix + (float)ext_inc * enc_step_);
-        dirty = true;
-    }
+    // External encoder rotate: adjust delay_mix (no shift) or reverb_mix (shift)
+const int32_t ext_inc = ext_enc_.Increment();
+if(ext_inc != 0)
+{
+    if(shift)
+        params.targets.reverb_mix = Clamp01(params.targets.reverb_mix + (float)ext_inc * enc_step_);
+    else
+        params.targets.delay_mix  = Clamp01(params.targets.delay_mix  + (float)ext_inc * enc_step_);
+    dirty = true;
+}
 
     if(dirty)
         app.ui_dirty = true;
