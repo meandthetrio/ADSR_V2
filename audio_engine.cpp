@@ -1,5 +1,7 @@
 #include "audio_engine.h"
 
+int ADSR_V2_AUDIO_ENGINE_LINKED = 1;
+
 void AudioEngine::Init(float sample_rate, size_t block_size)
 {
     sample_rate_ = sample_rate;

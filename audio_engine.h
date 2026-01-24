@@ -1,6 +1,8 @@
 #pragma once
 #include <cstddef>
 
+extern "C" int ADSR_V2_AUDIO_ENGINE_LINKED;
+
 class AudioEngine
 {
   public:
