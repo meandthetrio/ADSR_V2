@@ -1,0 +1,17 @@
+# Daisy / embedded build outputs
+build/
+*.o
+*.d
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+
+# macOS cruft
+.DS_Store
+__MACOSX/
+._*
+
+# editor
+.vscode/
