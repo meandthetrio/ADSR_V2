@@ -1,5 +1,6 @@
 # Project Name
 TARGET = ADSR_V2
+APP_TYPE = BOOT_QSPI
 
 # Sources
 CPP_SOURCES = main.cpp

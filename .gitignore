@@ -13,5 +13,6 @@ build/
 __MACOSX/
 ._*
 
-# editor
-.vscode/
+# Allow VSCode tasks only
+!.vscode/
+!.vscode/tasks.json
