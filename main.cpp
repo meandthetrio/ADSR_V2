@@ -4,6 +4,13 @@
 // OLED driver (SSD130x family) used in libDaisy examples
 #include "dev/oled_ssd130x.h"
 
+// --- NEW: layered headers ---
+#include "app_state.h"
+#include "params.h"
+#include "audio_engine.h"
+#include "ui_logic.h"
+#include "ui_render.h"
+
 using namespace daisy;
 
 // --- Hardware ---
@@ -15,18 +22,22 @@ static PodDisplay display;
 
 // --- UI timing ---
 static uint32_t last_ui_ms = 0;
-static bool     ui_dirty   = true;
+static bool     ui_dirty   = true; // (we’ll transition to AppState.ui_dirty in Step 6)
 
-// --- Audio: passthrough ---
+// --- NEW: layered globals ---
+static AppState    g_app;
+static Params      g_params;
+static AudioEngine g_audio;
+static UILogic     g_ui;
+static UIRender    g_render;
+
+// --- Audio: passthrough (now via AudioEngine) ---
 static void AudioCallback(AudioHandle::InputBuffer  in,
                           AudioHandle::OutputBuffer out,
                           size_t                    size)
 {
-    for(size_t i = 0; i < size; i++)
-    {
-        out[0][i] = in[0][i];
-        out[1][i] = in[1][i];
-    }
+    // Step 2: call the audio engine (currently passthrough inside ProcessBlock)
+    g_audio.ProcessBlock(in[0], in[1], out[0], out[1], size);
 }
 
 static void InitOled()
@@ -59,7 +70,6 @@ static void RenderPerformTitle()
     display.SetCursor(0, 0);
     display.WriteString("PERFORM", Font_7x10, true);
 
-    // Optional: show the pot values to prove controls update later
     display.SetCursor(0, 16);
     display.WriteString("ADSR V2", Font_6x8, true);
 
@@ -74,10 +84,21 @@ int main(void)
 
     InitOled();
 
+    // --- NEW: init layered stubs ---
+    g_params.Init();
+    g_audio.Init(hw.AudioSampleRate(), hw.AudioBlockSize());
+    g_ui.Init();
+    g_render.Init();
+
     hw.StartAudio(AudioCallback);
 
     while(1)
     {
+        // Step 2: placeholder “control tick” (does nothing yet)
+        // We keep your existing ui_dirty flag for now.
+        g_ui.ControlTick(g_app, g_params);
+        g_params.ControlTick();
+
         // Timer-driven UI tick (~30Hz). Only render when dirty.
         uint32_t now = System::GetNow();
         if(ui_dirty && (now - last_ui_ms) > 33)
@@ -86,5 +107,9 @@ int main(void)
             ui_dirty   = false;
             last_ui_ms = now;
         }
+
+        // Step 2: render layer stub (doesn’t draw yet)
+        // Later (Step 6), this will *be* the drawing and it will use g_app.ui_dirty.
+        g_render.RenderIfDirty(g_app, g_params);
     }
 }

@@ -4,6 +4,10 @@ APP_TYPE = BOOT_QSPI
 
 # Sources
 CPP_SOURCES = main.cpp
+CPP_SOURCES += params.cpp
+CPP_SOURCES += audio_engine.cpp
+CPP_SOURCES += ui_logic.cpp
+CPP_SOURCES += ui_render.cpp
 
 # Library Locations
 LIBDAISY_DIR = ../../libDaisy
