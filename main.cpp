@@ -21,8 +21,6 @@ using PodDisplay = OledDisplay<SSD130xI2c128x64Driver>;
 static PodDisplay display;
 
 // --- UI timing ---
-static uint32_t last_ui_ms = 0;
-static bool     ui_dirty   = true; // (we’ll transition to AppState.ui_dirty in Step 6)
 static uint32_t last_ctrl_ms = 0;
 
 // --- NEW: layered globals ---
@@ -38,7 +36,7 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
                           size_t                    size)
 {
     // Step 2: call the audio engine (currently passthrough inside ProcessBlock)
-    g_audio.ProcessBlock(in[0], in[1], out[0], out[1], size);
+    g_audio.ProcessBlock(in[0], in[1], out[0], out[1], size, g_params.current);
 }
 
 static void InitOled()
@@ -63,20 +61,6 @@ static void InitOled()
     display.Update();
 }
 
-static void RenderPerformTitle()
-{
-    display.Fill(false);
-
-    // Simple text in top-left
-    display.SetCursor(0, 0);
-    display.WriteString("PERFORM", Font_7x10, true);
-
-    display.SetCursor(0, 16);
-    display.WriteString("ADSR V2", Font_6x8, true);
-
-    display.Update();
-}
-
 int main(void)
 {
     hw.Init();
@@ -88,36 +72,30 @@ int main(void)
     // --- NEW: init layered stubs ---
     g_params.Init();
     g_audio.Init(hw.AudioSampleRate(), hw.AudioBlockSize());
-    g_ui.Init();
-    g_render.Init();
+    g_ui.Init(hw);
+    g_render.Init(&display);
 
     hw.StartAudio(AudioCallback);
 
     while(1)
     {
-        // Step 2: placeholder “control tick” (does nothing yet)
-        // We keep your existing ui_dirty flag for now.
-        g_ui.ControlTick(g_app, g_params);
-
-        // Compute dt (seconds) since last control tick
         uint32_t now_ms = System::GetNow();
-        float    dt_sec = (last_ctrl_ms == 0) ? 0.0f : (now_ms - last_ctrl_ms) * 0.001f;
-        last_ctrl_ms    = now_ms;
 
-        // Run control-rate smoothing tick
-        g_params.ControlTick(dt_sec);
+        // Run control processing at ~1kHz (1ms) max.
+        if(last_ctrl_ms == 0)
+            last_ctrl_ms = now_ms;
 
-        // Timer-driven UI tick (~30Hz). Only render when dirty.
-        uint32_t now = System::GetNow();
-        if(ui_dirty && (now - last_ui_ms) > 33)
+        uint32_t elapsed_ms = now_ms - last_ctrl_ms;
+        if(elapsed_ms >= 1)
         {
-            RenderPerformTitle();
-            ui_dirty   = false;
-            last_ui_ms = now;
+            float dt_sec = elapsed_ms * 0.001f;
+            last_ctrl_ms = now_ms;
+
+            hw.ProcessDigitalControls();
+            g_ui.ControlTick(hw, g_app, g_params);
+            g_params.ControlTick(dt_sec);
         }
 
-        // Step 2: render layer stub (doesn’t draw yet)
-        // Later (Step 6), this will *be* the drawing and it will use g_app.ui_dirty.
-        g_render.RenderIfDirty(g_app, g_params);
+        g_render.Tick(g_app, g_params);
     }
 }

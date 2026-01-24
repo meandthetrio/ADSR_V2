@@ -1,21 +1,27 @@
 #pragma once
 #include <cstddef>
+#include "params.h"
 
-extern "C" int ADSR_V2_AUDIO_ENGINE_LINKED;
+// Audio Engine Layer:
+// - Only audio processing.
+// - Reads Params::current (never targets).
+// - Implements hard bypass (DSP code not run when OFF).
 
 class AudioEngine
 {
   public:
     void Init(float sample_rate, size_t block_size);
 
-    // Stereo in/out, block-based processing.
     void ProcessBlock(const float* inL,
                       const float* inR,
                       float* outL,
                       float* outR,
-                      size_t size);
+                      size_t size,
+                      const PerformParamsCurrent& p);
 
   private:
-    float sample_rate_ = 48000.0f;
-    size_t block_size_ = 48;
+    float  sample_rate_ = 48000.0f;
+    size_t block_size_  = 48;
+
+    static inline float SoftClip(float x);
 };

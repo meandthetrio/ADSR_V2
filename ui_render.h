@@ -1,11 +1,27 @@
 #pragma once
+
 #include "app_state.h"
 #include "params.h"
+#include "daisy_pod.h"
+#include "dev/oled_ssd130x.h"
 
-// Step 2: stub. Step 6 will draw and use dirty flag + timer tick scheduling.
+// UI Render Layer:
+// - Draw only.
+// - Uses app.ui_dirty and a 30Hz timer.
+// - Does NOT change params or read controls.
+
 class UIRender
 {
   public:
-    void Init();
-    void RenderIfDirty(AppState& app, const Params& params);
+    using PodDisplay = daisy::OledDisplay<daisy::SSD130xI2c128x64Driver>;
+
+    void Init(PodDisplay* display);
+    void Tick(AppState& app, const Params& params);
+
+  private:
+    PodDisplay* display_   = nullptr;
+    uint32_t    last_ui_ms_ = 0;
+
+    static int ToPct01(float x);
+    void Render(const AppState& app, const Params& params);
 };
