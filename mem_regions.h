@@ -25,8 +25,5 @@
 #define ADSR_SDRAM_DATA
 
 #define ADSR2_SECTION(name) __attribute__((section(name)))
-#define ADSR2_SRAM   ADSR2_SECTION(".sram")
-#define ADSR2_D2_DMA ADSR2_SECTION(".ram_d2_dma")
-#define ADSR2_SDRAM  ADSR2_SECTION(".sdram_bss")
-#define ADSR2_DTCM   ADSR2_SECTION(".dtcmram_bss")
+#define ADSR2_SRAM ADSR2_SECTION(".sram")
 #define ADSR2_ALIGN32 __attribute__((aligned(32)))

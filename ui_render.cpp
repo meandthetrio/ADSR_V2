@@ -18,12 +18,14 @@ int UIRender::ToPct01(float x)
 
 void UIRender::Render(const AppState& app, const Params& params)
 {
+    (void)app;
+
     display_->Fill(false);
 
     display_->SetCursor(0, 0);
     display_->WriteString("PERFORM", Font_7x10, true);
 
-    display_->SetCursor(0, 10);
+    display_->SetCursor(0, 16);
     display_->WriteString("ADSR V2", Font_6x8, true);
 
     char buf[32];
@@ -31,27 +33,22 @@ void UIRender::Render(const AppState& app, const Params& params)
     std::snprintf(buf, sizeof(buf), "ML T:%3d C:%3d",
                   ToPct01(params.targets.master_level),
                   ToPct01(params.current.master_level));
-    display_->SetCursor(0, 20);
+    display_->SetCursor(0, 28);
     display_->WriteString(buf, Font_6x8, true);
 
     std::snprintf(buf, sizeof(buf), "Dly T:%3d C:%3d %s",
                   ToPct01(params.targets.delay_mix),
                   ToPct01(params.current.delay_mix),
                   params.targets.delay_on ? "ON" : "OFF");
-    display_->SetCursor(0, 30);
+    display_->SetCursor(0, 40);
     display_->WriteString(buf, Font_6x8, true);
 
     std::snprintf(buf, sizeof(buf), "Rev %s Sat:%3d %s",
                   params.targets.reverb_on ? "ON" : "OFF",
                   ToPct01(params.targets.sat_drive),
                   params.targets.sat_on ? "ON" : "OFF");
-    display_->SetCursor(0, 40);
+    display_->SetCursor(0, 52);
     display_->WriteString(buf, Font_6x8, true);
-
-    display_->SetCursor(0, 50);
-    display_->WriteString(app.sdram_ok ? "SDRAM: PASS" : "SDRAM: FAIL",
-                          Font_6x8,
-                          true);
 
     display_->Update();
 }

@@ -2,7 +2,7 @@
 #include <cmath>
 #include <cstring>
 
-ADSR2_SDRAM ADSR2_ALIGN32 static float g_delay_buf[AudioEngine::kDelayMaxSamples];
+ADSR2_SRAM ADSR2_ALIGN32 static float g_delay_buf[AudioEngine::kDelayMaxSamples];
 ADSR2_SRAM ADSR2_ALIGN32 static float g_comb1L[AudioEngine::kC1L], g_comb2L[AudioEngine::kC2L],
     g_comb3L[AudioEngine::kC3L], g_comb4L[AudioEngine::kC4L];
 ADSR2_SRAM ADSR2_ALIGN32 static float g_comb1R[AudioEngine::kC1R], g_comb2R[AudioEngine::kC2R],
@@ -150,7 +150,7 @@ void AudioEngine::Init(float sample_rate, size_t block_size)
     block_size_  = block_size;
 
     // Delay length ~200ms (kept small until we decide SDRAM placement)
-    const float delay_ms = 600.0f;
+    const float delay_ms = 200.0f;
     size_t want = (size_t)(sample_rate_ * (delay_ms * 0.001f));
     if(want < 1) want = 1;
     if(want >= kDelayMaxSamples) want = kDelayMaxSamples - 1;

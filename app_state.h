@@ -14,5 +14,4 @@ struct AppState
     // UI “dirty flag” = something visible changed and we should redraw.
     bool ui_dirty = true;
 
-    bool sdram_ok = false;
 };

@@ -30,7 +30,7 @@ class AudioEngine
 
     // ---- DELAY (mono feedback delay) ----
   public:
-    static constexpr size_t kDelayMaxSamples = 96000; // ~2.0s @ 48k
+    static constexpr size_t kDelayMaxSamples = 12000; // ~250ms @ 48k (small on purpose)
   private:
     float  delay_buf_[kDelayMaxSamples];
     size_t delay_wr_  = 0;
