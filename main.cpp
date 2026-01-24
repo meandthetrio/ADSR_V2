@@ -23,6 +23,7 @@ static PodDisplay display;
 // --- UI timing ---
 static uint32_t last_ui_ms = 0;
 static bool     ui_dirty   = true; // (we’ll transition to AppState.ui_dirty in Step 6)
+static uint32_t last_ctrl_ms = 0;
 
 // --- NEW: layered globals ---
 static AppState    g_app;
@@ -97,7 +98,14 @@ int main(void)
         // Step 2: placeholder “control tick” (does nothing yet)
         // We keep your existing ui_dirty flag for now.
         g_ui.ControlTick(g_app, g_params);
-        g_params.ControlTick();
+
+        // Compute dt (seconds) since last control tick
+        uint32_t now_ms = System::GetNow();
+        float    dt_sec = (last_ctrl_ms == 0) ? 0.0f : (now_ms - last_ctrl_ms) * 0.001f;
+        last_ctrl_ms    = now_ms;
+
+        // Run control-rate smoothing tick
+        g_params.ControlTick(dt_sec);
 
         // Timer-driven UI tick (~30Hz). Only render when dirty.
         uint32_t now = System::GetNow();
