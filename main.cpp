@@ -1,5 +1,6 @@
 #include "daisy_pod.h"
 #include "daisy_core.h"
+#include "stm32h7xx.h"
 
 // OLED driver (SSD130x family) used in libDaisy examples
 #include "dev/oled_ssd130x.h"
@@ -41,11 +42,19 @@ static VoiceEngine g_voice;
 // --- Event queue (MAIN -> AUDIO) ---
 static EventQueueSPSC g_evtq;
 
+static void EnableCycleCounter()
+{
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
 // --- Audio: passthrough (now via AudioEngine) ---
 static void AudioCallback(AudioHandle::InputBuffer  in,
                           AudioHandle::OutputBuffer out,
                           size_t                    size)
 {
+    const uint32_t start_cycles = DWT->CYCCNT;
     (void)in;
 
     g_params.AudioBlockTick(g_sample_rate_hz, size);
@@ -55,6 +64,16 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
 
     // FX / master level after voices (in-place).
     g_audio.ProcessBlock(out[0], out[1], out[0], out[1], size, g_params.current);
+
+    const uint32_t used = DWT->CYCCNT - start_cycles;
+    g_app.audio_cycles_last.store(used, std::memory_order_relaxed);
+    const uint32_t prev_peak = g_app.audio_cycles_peak.load(std::memory_order_relaxed);
+    if(used > prev_peak)
+        g_app.audio_cycles_peak.store(used, std::memory_order_relaxed);
+
+    const uint32_t budget = g_app.audio_budget_cycles.load(std::memory_order_relaxed);
+    if(budget > 0 && used > budget)
+        g_app.audio_late_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 static void InitOled()
@@ -86,6 +105,8 @@ int main(void)
     hw.SetAudioBlockSize(48);
     g_sample_rate_hz = hw.AudioSampleRate();
 
+    EnableCycleCounter();
+
     InitOled();
 
     // --- NEW: init layered stubs ---
@@ -98,11 +119,23 @@ int main(void)
     g_voice.BindDebug(&g_app.events_popped,
                       &g_app.voices_active,
                       &g_app.voice_steals,
-                      &g_app.last_voice_packed);
+                      &g_app.last_voice_packed,
+                      &g_app.last_stolen_voice_index,
+                      &g_app.last_stolen_start_id,
+                      &g_app.last_new_start_id);
+
+    const float block_seconds
+        = static_cast<float>(hw.AudioBlockSize()) / hw.AudioSampleRate();
+    uint32_t cpu_hz = SystemCoreClock;
+    if(cpu_hz == 0)
+        cpu_hz = 480000000;
+    const uint32_t budget_cycles = static_cast<uint32_t>(cpu_hz * block_seconds);
+    g_app.audio_budget_cycles.store(budget_cycles, std::memory_order_relaxed);
 
     hw.StartAudio(AudioCallback);
 
     last_ms = System::GetNow();
+    uint32_t last_peak_reset_ms = last_ms;
 
     while(1)
     {
@@ -115,32 +148,6 @@ int main(void)
             ctrl_accum_ms = 0;
         if(ctrl_accum_ms > 20)
             ctrl_accum_ms = 20;
-
-        const int kMaxCtrlTicksPerLoop = 3;
-        int ticks_to_run = ctrl_accum_ms;
-        if(ticks_to_run > kMaxCtrlTicksPerLoop)
-            ticks_to_run = kMaxCtrlTicksPerLoop;
-
-        for(int i = 0; i < ticks_to_run; ++i)
-        {
-            // Predictable scan cadence so edges can't be "missed" between reads.
-            hw.ProcessDigitalControls();
-            g_ui.ControlTick(hw, g_app, g_params, g_evtq);
-
-            ctrl_ticks_accum++;
-            if(ctrl_window_start_ms == 0)
-                ctrl_window_start_ms = now_ms;
-
-            if((now_ms - ctrl_window_start_ms) >= 1000)
-            {
-                g_app.ctrl_hz = ctrl_ticks_accum;
-                ctrl_ticks_accum = 0;
-                ctrl_window_start_ms = now_ms;
-                g_app.ui_dirty = true;
-            }
-
-            ctrl_accum_ms -= 1;
-        }
 
         bool midi_activity = false;
         hw.midi.Listen();
@@ -193,8 +200,40 @@ int main(void)
             g_app.last_input_ms = now_ms;
 
         const bool midi_busy = midi_activity || hw.midi.HasEvents();
-        g_render.TickOledTransfer(now_ms, midi_busy);
+
+        const int kMaxCtrlTicksPerLoop = 3;
+        int ticks_to_run = ctrl_accum_ms;
+        if(ticks_to_run > kMaxCtrlTicksPerLoop)
+            ticks_to_run = kMaxCtrlTicksPerLoop;
+
+        for(int i = 0; i < ticks_to_run; ++i)
+        {
+            // Predictable scan cadence so edges can't be "missed" between reads.
+            hw.ProcessDigitalControls();
+            g_ui.ControlTick(hw, g_app, g_params, g_evtq);
+
+            ctrl_ticks_accum++;
+            if(ctrl_window_start_ms == 0)
+                ctrl_window_start_ms = now_ms;
+
+            if((now_ms - ctrl_window_start_ms) >= 1000)
+            {
+                g_app.ctrl_hz = ctrl_ticks_accum;
+                ctrl_ticks_accum = 0;
+                ctrl_window_start_ms = now_ms;
+                g_app.ui_dirty = true;
+            }
+
+            ctrl_accum_ms -= 1;
+        }
+
+        if((now_ms - last_peak_reset_ms) >= 100)
+        {
+            g_app.audio_cycles_peak.store(0, std::memory_order_relaxed);
+            last_peak_reset_ms = now_ms;
+        }
 
         g_render.Tick(g_app, g_params);
+        g_render.TickOledTransfer(now_ms, midi_busy);
     }
 }

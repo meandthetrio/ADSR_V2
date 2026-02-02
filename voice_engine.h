@@ -14,6 +14,7 @@ enum class VoiceState : uint8_t
     Idle = 0,
     Playing,
     Releasing,
+    StealXFade,
 };
 
 struct Voice
@@ -22,12 +23,21 @@ struct Voice
     uint8_t    note          = 0;
     uint8_t    velocity      = 0;
     uint8_t    _pad0         = 0;
-    uint32_t   age           = 0; // allocation timestamp (used for Oldest Note stealing)
+    uint32_t   start_id      = 0; // monotonic allocation id (used for Oldest Note stealing)
 
     float phase         = 0.0f; // 0..2pi
     float phase_inc     = 0.0f; // radians/sample
     float amp           = 0.0f; // 0..1
     float release_coeff = 1.0f; // per-block exp decay (30ms)
+
+    float old_phase  = 0.0f;
+    float old_inc    = 0.0f;
+    float old_amp    = 0.0f;
+    float new_phase  = 0.0f;
+    float new_inc    = 0.0f;
+    float new_amp    = 0.0f;
+    float xfade_pos  = 0.0f; // 0..1
+    float xfade_step = 0.0f; // per-sample increment
 };
 
 class VoiceEngine
@@ -51,7 +61,10 @@ class VoiceEngine
     void BindDebug(std::atomic<uint32_t>* events_popped,
                    std::atomic<uint32_t>* voices_active,
                    std::atomic<uint32_t>* voice_steals,
-                   std::atomic<uint32_t>* last_voice_packed);
+                   std::atomic<uint32_t>* last_voice_packed,
+                   std::atomic<uint32_t>* last_stolen_voice_index,
+                   std::atomic<uint32_t>* last_stolen_start_id,
+                   std::atomic<uint32_t>* last_new_start_id);
 
     // AUDIO THREAD ONLY: last block counters (use AppState atomics for UI).
     uint32_t ActiveLastBlock() const { return active_last_block_; }
@@ -62,17 +75,25 @@ class VoiceEngine
     float   sample_rate_ = 48000.0f;
     size_t  block_size_  = 48;
     float   block_release_coeff_ = 1.0f;
-    uint32_t age_counter_ = 0;
+    uint32_t note_start_counter_ = 0;
     uint32_t active_last_block_ = 0;
     uint32_t steals_total_      = 0;
+    uint32_t last_stolen_voice_index_ = 0;
+    uint32_t last_stolen_start_id_    = 0;
+    uint32_t last_new_start_id_       = 0;
 
     std::atomic<uint32_t>* events_popped_      = nullptr;
     std::atomic<uint32_t>* voices_active_      = nullptr;
     std::atomic<uint32_t>* voice_steals_       = nullptr;
     std::atomic<uint32_t>* last_voice_packed_  = nullptr;
+    std::atomic<uint32_t>* last_stolen_voice_index_out_ = nullptr;
+    std::atomic<uint32_t>* last_stolen_start_id_out_    = nullptr;
+    std::atomic<uint32_t>* last_new_start_id_out_       = nullptr;
 
-    int  AllocateVoice_(uint8_t note, uint8_t velocity);
-    void StartVoice_(Voice& v, uint8_t note, uint8_t velocity, uint32_t age);
+    int  AllocateVoice_(bool& stole,
+                        uint8_t& stolen_index,
+                        uint32_t& stolen_start_id);
+    void StartVoice_(Voice& v, uint8_t note, uint8_t velocity, uint32_t start_id);
     void NoteOff_(uint8_t note);
     void AllNotesOff_();
 

@@ -14,6 +14,9 @@ void OledPager::Init(daisy::DaisyPod& hw)
 
     i2c_.Init(cfg);
 
+    SendCommand(0x20); // Set Memory Addressing Mode
+    SendCommand(0x02); // Page Addressing Mode
+
     Fill(false);
     initialized_  = true;
     transferring_ = false;

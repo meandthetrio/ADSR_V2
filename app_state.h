@@ -25,6 +25,15 @@ struct AppState
     std::atomic<uint32_t> voices_active{0};
     std::atomic<uint32_t> voices_peak_1s{0};
     std::atomic<uint32_t> voice_steals{0};
+    std::atomic<uint32_t> last_stolen_voice_index{0};
+    std::atomic<uint32_t> last_stolen_start_id{0};
+    std::atomic<uint32_t> last_new_start_id{0};
+
+    // Audio thread diagnostics.
+    std::atomic<uint32_t> audio_cycles_last{0};
+    std::atomic<uint32_t> audio_cycles_peak{0};
+    std::atomic<uint32_t> audio_budget_cycles{0};
+    std::atomic<uint32_t> audio_late_count{0};
     // Packed {voice_idx, note, velocity} in low 24 bits.
     std::atomic<uint32_t> last_voice_packed{0};
 

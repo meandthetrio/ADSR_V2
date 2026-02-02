@@ -147,39 +147,28 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueu
         input_detected = true;
         if(shift)
         {
-            // Poly stress test: burst 12 NoteOn immediately, then schedule NoteOffs at +200ms.
-            static constexpr uint8_t kNotes[12] = {60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79};
-
-            // Clear pending list and schedule fresh NoteOffs.
-            for(size_t i = 0; i < kMaxPendingNoteOffs; i++)
-                pending_note_offs_[i].active = false;
-
-            const uint32_t due = now_ms + 200;
-            for(size_t i = 0; i < 12; i++)
+            // Hold10 test: 10 notes (60..69) + 11th note (72) to force one steal.
+            for(uint8_t n = 60; n <= 69; n++)
             {
-                const uint8_t n = kNotes[i];
-
                 const Event on_evt = Event::NoteOnEvent(n, kVel);
                 if(evtq.Push(on_evt))
-                {
                     app.events_pushed.fetch_add(1, std::memory_order_relaxed);
-                }
                 else
                 {
                     app.queue_overflows.fetch_add(1, std::memory_order_relaxed);
                     app.ui_dirty = true;
                 }
-
-                // Schedule NoteOff
-                if(i < kMaxPendingNoteOffs)
-                {
-                    pending_note_offs_[i].active = true;
-                    pending_note_offs_[i].note   = n;
-                    pending_note_offs_[i].due_ms = due;
-                }
             }
 
-            // Make the stress result visible quickly (voices/steals will update in audio thread).
+            const Event extra_evt = Event::NoteOnEvent(72, kVel);
+            if(evtq.Push(extra_evt))
+                app.events_pushed.fetch_add(1, std::memory_order_relaxed);
+            else
+            {
+                app.queue_overflows.fetch_add(1, std::memory_order_relaxed);
+                app.ui_dirty = true;
+            }
+
             app.ui_dirty = true;
         }
         else

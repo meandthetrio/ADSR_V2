@@ -28,6 +28,11 @@ class UIRender
     uint32_t    last_events_popped_   = 0;
     uint32_t    last_queue_overflows_ = 0;
     uint32_t    last_rx_mod_          = 0;
+    uint32_t    last_stolen_voice_index_ = 0;
+    uint32_t    last_stolen_start_id_    = 0;
+    uint32_t    last_new_start_id_       = 0;
+    uint32_t    last_cpu_pct_            = 0;
+    uint32_t    last_audio_late_         = 0;
     uint32_t    last_voices_active_   = 0;
     uint32_t    last_voices_peak_1s_  = 0;
     uint32_t    last_voice_steals_    = 0;
