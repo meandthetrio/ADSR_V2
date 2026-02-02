@@ -195,8 +195,18 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueu
     if(ext_click)
     {
         input_detected = true;
-        t.delay_on = !t.delay_on;
-        targets_changed = true;
+        if(shift)
+        {
+            const uint32_t cur = app.loop_mode.load(std::memory_order_relaxed);
+            const uint32_t next = (cur == 0) ? 1 : 0;
+            app.loop_mode.store(next, std::memory_order_relaxed);
+            app.ui_dirty = true;
+        }
+        else
+        {
+            t.delay_on = !t.delay_on;
+            targets_changed = true;
+        }
     }
 
     // External encoder rotate adjusts delay_mix (proof-of-life)
@@ -204,8 +214,22 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueu
     if(ext_inc != 0)
     {
         input_detected = true;
-        t.delay_mix = Clamp01(t.delay_mix + (float)ext_inc * enc_step_);
-        targets_changed = true;
+        if(shift)
+        {
+            const float ratio = kLpfMaxHz / kLpfMinHz;
+            float cur_hz = t.lpf_cutoff_hz;
+            if(cur_hz < kLpfMinHz) cur_hz = kLpfMinHz;
+            if(cur_hz > kLpfMaxHz) cur_hz = kLpfMaxHz;
+            float norm = std::log(cur_hz / kLpfMinHz) / std::log(ratio);
+            norm = Clamp01(norm + (float)ext_inc * enc_step_);
+            t.lpf_cutoff_hz = kLpfMinHz * std::pow(ratio, norm);
+            targets_changed = true;
+        }
+        else
+        {
+            t.delay_mix = Clamp01(t.delay_mix + (float)ext_inc * enc_step_);
+            targets_changed = true;
+        }
     }
 
     if(targets_changed)

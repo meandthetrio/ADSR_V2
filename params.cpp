@@ -72,6 +72,7 @@ void Params::AudioBlockTick(float sample_rate, size_t block_size)
     current.delay_mix    = SmoothToward(current.delay_mix, t.delay_mix, coeff);
     current.reverb_mix   = SmoothToward(current.reverb_mix, t.reverb_mix, coeff);
     current.sat_drive    = SmoothToward(current.sat_drive, t.sat_drive, coeff);
+    current.lpf_cutoff_hz = SmoothToward(current.lpf_cutoff_hz, t.lpf_cutoff_hz, coeff);
 
     // Bools snap immediately
     current.delay_on  = t.delay_on;

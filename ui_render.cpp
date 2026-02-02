@@ -18,6 +18,8 @@ void UIRender::Init(PodDisplay* display, DaisyPod& hw)
     last_new_start_id_       = 0;
     last_cpu_pct_            = 0;
     last_audio_late_         = 0;
+    last_loop_mode_          = 0;
+    last_clip_count_         = 0;
     last_voices_active_   = 0;
     last_voices_peak_1s_  = 0;
     last_voice_steals_    = 0;
@@ -52,6 +54,10 @@ void UIRender::Render(const AppState& app, const Params& params)
     if(cpu_pct > 999u)
         cpu_pct = 999u;
     const uint32_t late_cnt = app.audio_late_count.load(std::memory_order_relaxed);
+    const uint32_t loop_mode = app.loop_mode.load(std::memory_order_relaxed);
+    const uint32_t clip_cnt = app.clip_count.load(std::memory_order_relaxed);
+    const char lp_char = (loop_mode == 0) ? 'F' : 'P';
+    const float mix_scale = 0.7f / 10.0f;
 
     (void)vpack;
 
@@ -75,20 +81,32 @@ void UIRender::Render(const AppState& app, const Params& params)
     oled_pager_.SetCursor(0, 8);
     oled_pager_.WriteString(buf, Font_6x8, true);
 
-    std::snprintf(buf, sizeof(buf), "ML T:%3d",
+    std::snprintf(buf, sizeof(buf), "ML:%3d SRC:SAMP INT",
                   ToPct01(t.master_level));
     oled_pager_.SetCursor(0, 16);
     oled_pager_.WriteString(buf, Font_6x8, true);
 
-    std::snprintf(buf, sizeof(buf), "Dly T:%3d %s",
+    const uint32_t lpf_hz = static_cast<uint32_t>(t.lpf_cutoff_hz + 0.5f);
+    char lpf_buf[8];
+    if(lpf_hz >= 1000)
+        std::snprintf(lpf_buf, sizeof(lpf_buf), "%2luk", (unsigned long)((lpf_hz + 500) / 1000));
+    else
+        std::snprintf(lpf_buf, sizeof(lpf_buf), "%3lu", (unsigned long)lpf_hz);
+    char mix_buf[8];
+    std::snprintf(mix_buf, sizeof(mix_buf), "%.2f", mix_scale);
+
+    std::snprintf(buf, sizeof(buf), "D:%3d LP:%s M:%s %c",
                   ToPct01(t.delay_mix),
-                  t.delay_on ? "ON" : "OFF");
+                  lpf_buf,
+                  mix_buf,
+                  lp_char);
     oled_pager_.SetCursor(0, 24);
     oled_pager_.WriteString(buf, Font_6x8, true);
 
-    std::snprintf(buf, sizeof(buf), "CPU:%3lu%% L:%lu",
+    std::snprintf(buf, sizeof(buf), "CPU:%3lu L:%lu CLP:%lu ST",
                   (unsigned long)cpu_pct,
-                  (unsigned long)late_cnt);
+                  (unsigned long)late_cnt,
+                  (unsigned long)clip_cnt);
     oled_pager_.SetCursor(0, 32);
     oled_pager_.WriteString(buf, Font_6x8, true);
 
@@ -136,6 +154,8 @@ void UIRender::Tick(AppState& app, const Params& params)
     uint32_t new_id = last_new_start_id_;
     uint32_t cpu_pct = last_cpu_pct_;
     uint32_t late_cnt = last_audio_late_;
+    uint32_t loop_mode = last_loop_mode_;
+    uint32_t clip_cnt = last_clip_count_;
     bool     stats_loaded = false;
 
     const bool stats_due = (now_ms - last_stats_ms_) >= 100;
@@ -157,6 +177,8 @@ void UIRender::Tick(AppState& app, const Params& params)
         if(cpu_pct > 999u)
             cpu_pct = 999u;
         late_cnt = app.audio_late_count.load(std::memory_order_relaxed);
+        loop_mode = app.loop_mode.load(std::memory_order_relaxed);
+        clip_cnt = app.clip_count.load(std::memory_order_relaxed);
         vact   = app.voices_active.load(std::memory_order_relaxed);
         const uint32_t vpk1s = app.voices_peak_1s.load(std::memory_order_relaxed);
         vstl   = app.voice_steals.load(std::memory_order_relaxed);
@@ -170,6 +192,8 @@ void UIRender::Tick(AppState& app, const Params& params)
            || (new_id != last_new_start_id_)
            || (cpu_pct != last_cpu_pct_)
            || (late_cnt != last_audio_late_)
+           || (loop_mode != last_loop_mode_)
+           || (clip_cnt != last_clip_count_)
            || (vact != last_voices_active_)
            || (vpk1s != last_voices_peak_1s_)
            || (vstl != last_voice_steals_) || (vpack != last_voice_packed_))
@@ -212,6 +236,8 @@ void UIRender::Tick(AppState& app, const Params& params)
         if(cpu_pct > 999u)
             cpu_pct = 999u;
         late_cnt = app.audio_late_count.load(std::memory_order_relaxed);
+        loop_mode = app.loop_mode.load(std::memory_order_relaxed);
+        clip_cnt = app.clip_count.load(std::memory_order_relaxed);
         vact   = app.voices_active.load(std::memory_order_relaxed);
         last_voices_peak_1s_ = app.voices_peak_1s.load(std::memory_order_relaxed);
         vstl   = app.voice_steals.load(std::memory_order_relaxed);
@@ -227,6 +253,8 @@ void UIRender::Tick(AppState& app, const Params& params)
     last_new_start_id_       = new_id;
     last_cpu_pct_            = cpu_pct;
     last_audio_late_         = late_cnt;
+    last_loop_mode_          = loop_mode;
+    last_clip_count_         = clip_cnt;
     last_voices_active_   = vact;
     last_voice_steals_    = vstl;
     last_voice_packed_    = vpack;

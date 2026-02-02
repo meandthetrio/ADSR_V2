@@ -33,6 +33,8 @@ class UIRender
     uint32_t    last_new_start_id_       = 0;
     uint32_t    last_cpu_pct_            = 0;
     uint32_t    last_audio_late_         = 0;
+    uint32_t    last_loop_mode_          = 0;
+    uint32_t    last_clip_count_         = 0;
     uint32_t    last_voices_active_   = 0;
     uint32_t    last_voices_peak_1s_  = 0;
     uint32_t    last_voice_steals_    = 0;

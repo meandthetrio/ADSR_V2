@@ -30,4 +30,7 @@ class UILogic
 
     const float enc_step_ = 0.02f;
     static float Clamp01(float x);
+
+    static constexpr float kLpfMinHz = 80.0f;
+    static constexpr float kLpfMaxHz = 12000.0f;
 };

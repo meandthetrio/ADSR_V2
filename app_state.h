@@ -20,6 +20,8 @@ struct AppState
     std::atomic<uint32_t> events_popped{0};
     std::atomic<uint32_t> queue_overflows{0};
     std::atomic<uint32_t> midi_rx_count{0};
+    std::atomic<uint32_t> loop_mode{0}; // 0=FWD, 1=PINGPONG
+    std::atomic<uint32_t> clip_count{0};
 
     // Voice engine debug (written by audio thread, read by UI).
     std::atomic<uint32_t> voices_active{0};

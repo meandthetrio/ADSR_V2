@@ -14,6 +14,7 @@
 #include "ui_render.h"
 #include "event_queue.h"
 #include "voice_engine.h"
+#include "embedded_long_sample.h"
 
 using namespace daisy;
 
@@ -60,6 +61,7 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     g_params.AudioBlockTick(g_sample_rate_hz, size);
 
     g_voice.ProcessEvents(g_evtq);
+    g_voice.SetLpfCutoff(g_params.current.lpf_cutoff_hz);
     g_voice.RenderBlock(out[0], out[1], size);
 
     // FX / master level after voices (in-place).
@@ -116,13 +118,15 @@ int main(void)
     g_render.Init(&display, hw);
     hw.midi.StartReceive();
     g_voice.Init(g_sample_rate_hz, hw.AudioBlockSize());
+    g_voice.SetSample(GetEmbeddedLongSample());
     g_voice.BindDebug(&g_app.events_popped,
                       &g_app.voices_active,
                       &g_app.voice_steals,
                       &g_app.last_voice_packed,
                       &g_app.last_stolen_voice_index,
                       &g_app.last_stolen_start_id,
-                      &g_app.last_new_start_id);
+                      &g_app.last_new_start_id,
+                      &g_app.clip_count);
 
     const float block_seconds
         = static_cast<float>(hw.AudioBlockSize()) / hw.AudioSampleRate();
@@ -226,6 +230,9 @@ int main(void)
 
             ctrl_accum_ms -= 1;
         }
+
+        const uint32_t loop_mode = g_app.loop_mode.load(std::memory_order_relaxed);
+        g_voice.SetLoopMode(loop_mode == 0 ? LoopMode::Forward : LoopMode::PingPong);
 
         if((now_ms - last_peak_reset_ms) >= 100)
         {

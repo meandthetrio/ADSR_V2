@@ -14,6 +14,7 @@ struct PerformParamsTargets
     float delay_mix  = 0.0f;
     float reverb_mix = 0.0f;
     float sat_drive  = 0.0f;
+    float lpf_cutoff_hz = 12000.0f;
 };
 
 struct PerformParamsCurrent
@@ -27,6 +28,7 @@ struct PerformParamsCurrent
     float delay_mix  = 0.0f;
     float reverb_mix = 0.0f;
     float sat_drive  = 0.0f;
+    float lpf_cutoff_hz = 12000.0f;
 };
 
 class Params
