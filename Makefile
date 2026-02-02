@@ -10,6 +10,12 @@ CPP_SOURCES += ui_logic.cpp
 CPP_SOURCES += ui_render.cpp
 CPP_SOURCES += oled_pager.cpp
 CPP_SOURCES += voice_engine.cpp
+CPP_SOURCES += keygroups.cpp
+CPP_SOURCES += velocity_layers.cpp
+CPP_SOURCES += mod_sources.cpp
+CPP_SOURCES += mod_matrix.cpp
+CPP_SOURCES += plocks.cpp
+CPP_SOURCES += macros.cpp
 
 # Library Locations
 LIBDAISY_DIR = ../../libDaisy

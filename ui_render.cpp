@@ -1,4 +1,7 @@
 #include "ui_render.h"
+#include "build_config.h"
+#include "mod_matrix.h"
+#include "macros.h"
 #include <cstdio>
 
 using namespace daisy;
@@ -24,6 +27,13 @@ void UIRender::Init(PodDisplay* display, DaisyPod& hw)
     last_voices_peak_1s_  = 0;
     last_voice_steals_    = 0;
     last_voice_packed_    = 0;
+    last_sample_index_    = 0;
+    last_fadeouts_started_ = 0;
+    last_vel_layer_       = 0;
+    last_lfo_             = 0;
+    last_env_             = 0;
+    last_lfo_rate_dbg_    = 0;
+    last_lfo_depth_dbg_   = 0;
 }
 
 int UIRender::ToPct01(float x)
@@ -31,6 +41,16 @@ int UIRender::ToPct01(float x)
     if(x < 0.0f) x = 0.0f;
     if(x > 1.0f) x = 1.0f;
     return (int)(x * 100.0f + 0.5f);
+}
+
+static char SrcChar(uint8_t src)
+{
+    return (src == static_cast<uint8_t>(ModSource::LFO)) ? 'L' : 'E';
+}
+
+static char DstChar(uint8_t dst)
+{
+    return (dst == static_cast<uint8_t>(ModDest::FilterCutoff)) ? 'C' : 'P';
 }
 
 void UIRender::Render(const AppState& app, const Params& params)
@@ -42,6 +62,13 @@ void UIRender::Render(const AppState& app, const Params& params)
     const uint32_t vpk1s  = app.voices_peak_1s.load(std::memory_order_relaxed);
     const uint32_t vstl   = app.voice_steals.load(std::memory_order_relaxed);
     const uint32_t vpack  = app.last_voice_packed.load(std::memory_order_relaxed);
+    const uint32_t kg_idx = app.last_sample_index.load(std::memory_order_relaxed);
+    const uint32_t fadeouts = app.fadeouts_started.load(std::memory_order_relaxed);
+    const uint32_t vel_layer = app.last_vel_layer.load(std::memory_order_relaxed);
+    const int32_t lfo_val = app.last_lfo.load(std::memory_order_relaxed);
+    const int32_t env_val = app.last_env.load(std::memory_order_relaxed);
+    const uint32_t lfo_rate_dbg = app.lfo_rate_dbg.load(std::memory_order_relaxed);
+    const uint32_t lfo_depth_dbg = app.lfo_depth_dbg.load(std::memory_order_relaxed);
     const auto&    t      = params.TargetsForUI();
     const uint32_t lsv    = app.last_stolen_voice_index.load(std::memory_order_relaxed);
     const uint32_t old_id = app.last_stolen_start_id.load(std::memory_order_relaxed);
@@ -60,6 +87,15 @@ void UIRender::Render(const AppState& app, const Params& params)
     const float mix_scale = 0.7f / 10.0f;
 
     (void)vpack;
+    (void)lsv;
+    (void)old_id;
+    (void)new_id;
+    (void)pushed;
+    (void)popped;
+    (void)kg_idx;
+    (void)vel_layer;
+    (void)ovf;
+    (void)clip_cnt;
 
     oled_pager_.Fill(false);
 
@@ -103,28 +139,52 @@ void UIRender::Render(const AppState& app, const Params& params)
     oled_pager_.SetCursor(0, 24);
     oled_pager_.WriteString(buf, Font_6x8, true);
 
-    std::snprintf(buf, sizeof(buf), "CPU:%3lu L:%lu CLP:%lu ST",
+    std::snprintf(buf, sizeof(buf), "CPU:%3lu L:%lu FO:%lu",
                   (unsigned long)cpu_pct,
                   (unsigned long)late_cnt,
-                  (unsigned long)clip_cnt);
+                  (unsigned long)fadeouts);
     oled_pager_.SetCursor(0, 32);
     oled_pager_.WriteString(buf, Font_6x8, true);
 
-    std::snprintf(buf, sizeof(buf), "P:%lu O:%lu",
-                  (unsigned long)pushed,
-                  (unsigned long)popped);
+    const uint8_t mac_sel = app.macro_ui.selected % kNumMacros;
+    uint32_t mac_val = (uint32_t)(app.macro_ui.value[mac_sel] * 100.0f + 0.5f);
+    if(mac_val > 100)
+        mac_val = 100;
+    std::snprintf(buf, sizeof(buf), "MAC:%u V:%03lu",
+                  (unsigned)mac_sel,
+                  (unsigned long)mac_val);
     oled_pager_.SetCursor(0, 40);
     oled_pager_.WriteString(buf, Font_6x8, true);
 
-    std::snprintf(buf, sizeof(buf), "OVF:%lu LSV:%2lu",
-                  (unsigned long)ovf,
-                  (unsigned long)lsv);
+    const uint8_t step_idx = app.plock_pattern.step_index % kSteps;
+    const StepLock& step_lock = app.plock_pattern.steps[step_idx];
+    uint32_t cutoff_pct = (uint32_t)(step_lock.cutoff_norm * 100.0f + 0.5f);
+    if(cutoff_pct > 100)
+        cutoff_pct = 100;
+    std::snprintf(buf, sizeof(buf), "ST:%02u LK:%u C:%03lu",
+                  (unsigned)step_idx,
+                  (unsigned)step_lock.enabled,
+                  (unsigned long)cutoff_pct);
     oled_pager_.SetCursor(0, 48);
     oled_pager_.WriteString(buf, Font_6x8, true);
 
-    std::snprintf(buf, sizeof(buf), "OLD:%lu NEW:%lu",
-                  (unsigned long)old_id,
-                  (unsigned long)new_id);
+    const uint8_t r_idx = app.mod_route_selected % kMaxModRoutes;
+    const ModRoute& r = app.mod_routes_ui[r_idx];
+    int amt = (int)(r.amount * 100.0f);
+    if(amt > 99) amt = 99;
+    if(amt < -99) amt = -99;
+    (void)lfo_val;
+    (void)env_val;
+    (void)lfo_rate_dbg;
+    (void)lfo_depth_dbg;
+    (void)ovf;
+    (void)clip_cnt;
+    std::snprintf(buf, sizeof(buf), "R%u S:%c D:%c A:%+03d E:%u",
+                  (unsigned)r_idx,
+                  SrcChar(r.src),
+                  DstChar(r.dst),
+                  amt,
+                  (unsigned)r.enabled);
     oled_pager_.SetCursor(0, 56);
     oled_pager_.WriteString(buf, Font_6x8, true);
 
@@ -156,6 +216,13 @@ void UIRender::Tick(AppState& app, const Params& params)
     uint32_t late_cnt = last_audio_late_;
     uint32_t loop_mode = last_loop_mode_;
     uint32_t clip_cnt = last_clip_count_;
+    uint32_t kg_idx = last_sample_index_;
+    uint32_t fadeouts = last_fadeouts_started_;
+    uint32_t vel_layer = last_vel_layer_;
+    int32_t lfo_val = last_lfo_;
+    int32_t env_val = last_env_;
+    uint32_t lfo_rate_dbg = last_lfo_rate_dbg_;
+    uint32_t lfo_depth_dbg = last_lfo_depth_dbg_;
     bool     stats_loaded = false;
 
     const bool stats_due = (now_ms - last_stats_ms_) >= 100;
@@ -183,6 +250,13 @@ void UIRender::Tick(AppState& app, const Params& params)
         const uint32_t vpk1s = app.voices_peak_1s.load(std::memory_order_relaxed);
         vstl   = app.voice_steals.load(std::memory_order_relaxed);
         vpack  = app.last_voice_packed.load(std::memory_order_relaxed);
+        kg_idx = app.last_sample_index.load(std::memory_order_relaxed);
+        fadeouts = app.fadeouts_started.load(std::memory_order_relaxed);
+        vel_layer = app.last_vel_layer.load(std::memory_order_relaxed);
+        lfo_val = app.last_lfo.load(std::memory_order_relaxed);
+        env_val = app.last_env.load(std::memory_order_relaxed);
+        lfo_rate_dbg = app.lfo_rate_dbg.load(std::memory_order_relaxed);
+        lfo_depth_dbg = app.lfo_depth_dbg.load(std::memory_order_relaxed);
         stats_loaded = true;
 
         if((pushed != last_events_pushed_) || (popped != last_events_popped_)
@@ -196,7 +270,14 @@ void UIRender::Tick(AppState& app, const Params& params)
            || (clip_cnt != last_clip_count_)
            || (vact != last_voices_active_)
            || (vpk1s != last_voices_peak_1s_)
-           || (vstl != last_voice_steals_) || (vpack != last_voice_packed_))
+           || (vstl != last_voice_steals_) || (vpack != last_voice_packed_)
+           || (kg_idx != last_sample_index_)
+           || (fadeouts != last_fadeouts_started_)
+           || (vel_layer != last_vel_layer_)
+           || (lfo_val != last_lfo_)
+           || (env_val != last_env_)
+           || (lfo_rate_dbg != last_lfo_rate_dbg_)
+           || (lfo_depth_dbg != last_lfo_depth_dbg_))
             app.ui_dirty = true;
 
         // Decimate stats-driven dirty marking to 10Hz max.
@@ -242,6 +323,13 @@ void UIRender::Tick(AppState& app, const Params& params)
         last_voices_peak_1s_ = app.voices_peak_1s.load(std::memory_order_relaxed);
         vstl   = app.voice_steals.load(std::memory_order_relaxed);
         vpack  = app.last_voice_packed.load(std::memory_order_relaxed);
+        kg_idx = app.last_sample_index.load(std::memory_order_relaxed);
+        fadeouts = app.fadeouts_started.load(std::memory_order_relaxed);
+        vel_layer = app.last_vel_layer.load(std::memory_order_relaxed);
+        lfo_val = app.last_lfo.load(std::memory_order_relaxed);
+        env_val = app.last_env.load(std::memory_order_relaxed);
+        lfo_rate_dbg = app.lfo_rate_dbg.load(std::memory_order_relaxed);
+        lfo_depth_dbg = app.lfo_depth_dbg.load(std::memory_order_relaxed);
     }
 
     last_events_pushed_   = pushed;
@@ -258,4 +346,11 @@ void UIRender::Tick(AppState& app, const Params& params)
     last_voices_active_   = vact;
     last_voice_steals_    = vstl;
     last_voice_packed_    = vpack;
+    last_sample_index_    = kg_idx;
+    last_fadeouts_started_ = fadeouts;
+    last_vel_layer_       = vel_layer;
+    last_lfo_             = lfo_val;
+    last_env_             = env_val;
+    last_lfo_rate_dbg_    = lfo_rate_dbg;
+    last_lfo_depth_dbg_   = lfo_depth_dbg;
 }

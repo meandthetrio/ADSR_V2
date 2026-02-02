@@ -14,7 +14,14 @@
 #include "ui_render.h"
 #include "event_queue.h"
 #include "voice_engine.h"
+#include "keygroups.h"
+#include "velocity_layers.h"
+#include "mod_matrix.h"
+#include "plocks.h"
+#include "macros.h"
+#include "embedded_sample.h"
 #include "embedded_long_sample.h"
+#include <cmath>
 
 using namespace daisy;
 
@@ -31,6 +38,7 @@ static int32_t  ctrl_accum_ms = 0;
 static float    g_sample_rate_hz = 48000.0f;
 static uint32_t ctrl_ticks_accum = 0;
 static uint32_t ctrl_window_start_ms = 0;
+static constexpr float kMacroSmoothSec = 0.005f;
 
 // --- NEW: layered globals ---
 static AppState g_app;
@@ -60,12 +68,46 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
 
     g_params.AudioBlockTick(g_sample_rate_hz, size);
 
+    static MacroState s_active_macros{};
+    static MacroState s_macro_smoothed{};
+    static uint32_t   s_macro_gen_seen = 0;
+    static bool       s_macro_init = false;
+    if(!s_macro_init)
+    {
+        Macros_InitState(s_active_macros);
+        Macros_InitState(s_macro_smoothed);
+        s_macro_init = true;
+    }
+    const uint32_t macro_gen = g_app.macro_gen.load(std::memory_order_acquire);
+    if(macro_gen != s_macro_gen_seen)
+    {
+        const uint8_t sel = g_app.macro_sel.load(std::memory_order_acquire) & 1u;
+        s_active_macros = (sel == 0) ? g_app.macro_a : g_app.macro_b;
+        s_macro_gen_seen = macro_gen;
+    }
+    const float dt_block_sec = static_cast<float>(size) / g_sample_rate_hz;
+    float macro_coeff = 1.0f - std::exp(-dt_block_sec / kMacroSmoothSec);
+    if(macro_coeff < 0.0f)
+        macro_coeff = 0.0f;
+    if(macro_coeff > 1.0f)
+        macro_coeff = 1.0f;
+    Macros_Smooth(s_macro_smoothed, s_active_macros, macro_coeff);
+
+    g_voice.SetModParams(g_params.current.lfo_rate_hz,
+                         g_params.current.lfo_depth,
+                         g_params.current.env_attack_ms,
+                         g_params.current.env_decay_ms,
+                         g_params.current.env_amount);
     g_voice.ProcessEvents(g_evtq);
     g_voice.SetLpfCutoff(g_params.current.lpf_cutoff_hz);
     g_voice.RenderBlock(out[0], out[1], size);
 
     // FX / master level after voices (in-place).
-    g_audio.ProcessBlock(out[0], out[1], out[0], out[1], size, g_params.current);
+    PerformParamsCurrent fx_params = g_params.current;
+    float drive = fx_params.sat_drive;
+    Macros_Apply(s_macro_smoothed, nullptr, nullptr, nullptr, nullptr, &drive);
+    fx_params.sat_drive = drive;
+    g_audio.ProcessBlock(out[0], out[1], out[0], out[1], size, fx_params);
 
     const uint32_t used = DWT->CYCCNT - start_cycles;
     g_app.audio_cycles_last.store(used, std::memory_order_relaxed);
@@ -113,12 +155,25 @@ int main(void)
 
     // --- NEW: init layered stubs ---
     g_params.Init();
+    ModMatrix_InitDefaults(g_app.mod_matrix, g_app.mod_routes_ui);
+    g_app.mod_route_selected = 0;
+    Macros_InitState(g_app.macro_ui);
+    Macros_Publish(g_app, g_app.macro_ui);
+    PLocks_InitPattern(g_app.plock_pattern);
+    PLocks_PublishCurrentStep(g_app.plocks, g_app.plock_pattern);
     g_audio.Init(hw.AudioSampleRate(), hw.AudioBlockSize());
     g_ui.Init(hw);
     g_render.Init(&display, hw);
     hw.midi.StartReceive();
     g_voice.Init(g_sample_rate_hz, hw.AudioBlockSize());
-    g_voice.SetSample(GetEmbeddedLongSample());
+    g_voice.SetModMatrix(&g_app.mod_matrix);
+    g_voice.SetPLocks(&g_app.plocks);
+    g_voice.SetMacros(&g_app.macro_a, &g_app.macro_b, &g_app.macro_sel, &g_app.macro_gen);
+    const Sample* sample0 = GetEmbeddedSample();
+    const Sample* sample1 = GetEmbeddedLongSample();
+    const Sample* bank[2] = {sample0, sample1};
+    g_voice.SetSampleBank(bank, 2);
+    g_voice.SetSample(sample1);
     g_voice.BindDebug(&g_app.events_popped,
                       &g_app.voices_active,
                       &g_app.voice_steals,
@@ -126,7 +181,12 @@ int main(void)
                       &g_app.last_stolen_voice_index,
                       &g_app.last_stolen_start_id,
                       &g_app.last_new_start_id,
-                      &g_app.clip_count);
+                      &g_app.clip_count,
+                      &g_app.fadeouts_started,
+                      &g_app.last_lfo,
+                      &g_app.last_env,
+                      &g_app.lfo_rate_dbg,
+                      &g_app.lfo_depth_dbg);
 
     const float block_seconds
         = static_cast<float>(hw.AudioBlockSize()) / hw.AudioSampleRate();
@@ -177,7 +237,14 @@ int main(void)
                 }
                 else
                 {
-                    const Event evt = Event::NoteOnEvent(note_on.note, note_on.velocity);
+                    const uint8_t idx = Keygroups_SelectSampleIndex(note_on.note);
+                    const uint8_t layer = Velocity_SelectLayer(note_on.velocity);
+                    Event evt = Event::NoteOnEvent(note_on.note, note_on.velocity);
+                    evt.value = (uint32_t)idx | ((uint32_t)layer << 8);
+                    g_app.last_sample_index.store(idx, std::memory_order_relaxed);
+                    g_app.last_vel_layer.store(layer, std::memory_order_relaxed);
+                    g_app.last_velocity.store(note_on.velocity, std::memory_order_relaxed);
+                    g_app.ui_dirty = true;
                     if(g_evtq.Push(evt))
                         g_app.events_pushed.fetch_add(1, std::memory_order_relaxed);
                     else

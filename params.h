@@ -15,6 +15,11 @@ struct PerformParamsTargets
     float reverb_mix = 0.0f;
     float sat_drive  = 0.0f;
     float lpf_cutoff_hz = 12000.0f;
+    float lfo_rate_hz   = 1.0f;
+    float lfo_depth     = 0.5f;
+    float env_attack_ms = 5.0f;
+    float env_decay_ms  = 120.0f;
+    float env_amount    = 0.5f;
 };
 
 struct PerformParamsCurrent
@@ -29,6 +34,11 @@ struct PerformParamsCurrent
     float reverb_mix = 0.0f;
     float sat_drive  = 0.0f;
     float lpf_cutoff_hz = 12000.0f;
+    float lfo_rate_hz   = 1.0f;
+    float lfo_depth     = 0.5f;
+    float env_attack_ms = 5.0f;
+    float env_decay_ms  = 120.0f;
+    float env_amount    = 0.5f;
 };
 
 class Params

@@ -2,6 +2,10 @@
 #include <atomic>
 #include <cstdint>
 
+#include "mod_matrix.h"
+#include "plocks.h"
+#include "macros.h"
+
 enum class PerformPage : uint8_t
 {
     Main = 0,
@@ -22,6 +26,7 @@ struct AppState
     std::atomic<uint32_t> midi_rx_count{0};
     std::atomic<uint32_t> loop_mode{0}; // 0=FWD, 1=PINGPONG
     std::atomic<uint32_t> clip_count{0};
+    std::atomic<uint32_t> fadeouts_started{0};
 
     // Voice engine debug (written by audio thread, read by UI).
     std::atomic<uint32_t> voices_active{0};
@@ -38,6 +43,33 @@ struct AppState
     std::atomic<uint32_t> audio_late_count{0};
     // Packed {voice_idx, note, velocity} in low 24 bits.
     std::atomic<uint32_t> last_voice_packed{0};
+    std::atomic<uint32_t> last_sample_index{0};
+    std::atomic<uint32_t> last_vel_layer{0};
+    std::atomic<uint32_t> last_velocity{0};
+    std::atomic<int32_t> last_lfo{0};
+    std::atomic<int32_t> last_env{0};
+    std::atomic<uint32_t> lfo_rate_dbg{0};
+    std::atomic<uint32_t> lfo_depth_dbg{0};
+
+    // Mod matrix (main loop owns edits, audio thread consumes snapshot).
+    ModMatrixState mod_matrix{};
+    ModRoute       mod_routes_ui[kMaxModRoutes]{};
+    uint8_t        mod_route_selected = 0;
+
+    // Parameter locks (main loop owns pattern and clock).
+    PLocksState plocks{};
+    Pattern     plock_pattern{};
+    bool        seq_running = true;
+    uint32_t    seq_bpm = 120;
+    uint32_t    seq_last_ms = 0;
+    uint32_t    seq_accum_ms = 0;
+
+    // Performance macros (main loop edits, audio thread latches).
+    MacroState macro_ui{};
+    MacroState macro_a{};
+    MacroState macro_b{};
+    std::atomic<uint8_t>  macro_sel{0};
+    std::atomic<uint32_t> macro_gen{0};
 
     // Main-loop owned UI helpers (not accessed from audio thread).
     uint32_t last_input_ms = 0;

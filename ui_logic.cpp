@@ -1,4 +1,9 @@
 #include "ui_logic.h"
+#include "keygroups.h"
+#include "velocity_layers.h"
+#include "mod_matrix.h"
+#include "plocks.h"
+#include "macros.h"
 #include <atomic>
 #include <cmath>
 
@@ -7,6 +12,13 @@ using namespace daisy;
 float UILogic::Clamp01(float x)
 {
     if(x < 0.0f) return 0.0f;
+    if(x > 1.0f) return 1.0f;
+    return x;
+}
+
+static float ClampSigned(float x)
+{
+    if(x < -1.0f) return -1.0f;
     if(x > 1.0f) return 1.0f;
     return x;
 }
@@ -48,7 +60,25 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueu
         input_detected = true;
     }
 
-    constexpr uint8_t kVel   = 100;
+    if(app.seq_last_ms == 0)
+        app.seq_last_ms = now_ms;
+    uint32_t seq_dt = now_ms - app.seq_last_ms;
+    app.seq_last_ms = now_ms;
+    if(app.seq_running)
+    {
+        app.seq_accum_ms += seq_dt;
+        float step_ms_f = 15000.0f / (float)app.seq_bpm;
+        if(step_ms_f < 1.0f)
+            step_ms_f = 1.0f;
+        const uint32_t step_ms = static_cast<uint32_t>(step_ms_f + 0.5f);
+        while(app.seq_accum_ms >= step_ms)
+        {
+            app.seq_accum_ms -= step_ms;
+            app.plock_pattern.step_index = (app.plock_pattern.step_index + 1) % kSteps;
+            PLocks_PublishCurrentStep(app.plocks, app.plock_pattern);
+            app.ui_dirty = true;
+        }
+    }
 
     // 1-second rolling peak of active voices (sampled at control rate).
     const uint32_t active_now = app.voices_active.load(std::memory_order_relaxed);
@@ -103,21 +133,24 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueu
     if(b1_rise || b1_fall || b2_rise || b2_fall)
         input_detected = true;
 
+    bool mod_changed = false;
+    bool mod_sel_changed = false;
+
     // Pod buttons
     if(b1_rise)
     {
         if(shift)
         {
-            const Event evt = Event::TestPingEvent(1);
-            if(evtq.Push(evt))
-            {
-                app.events_pushed.fetch_add(1, std::memory_order_relaxed);
-            }
-            else
-            {
-                app.queue_overflows.fetch_add(1, std::memory_order_relaxed);
-                app.ui_dirty = true;
-            }
+            ModRoute& r = app.mod_routes_ui[app.mod_route_selected % kMaxModRoutes];
+            r.src = (r.src == static_cast<uint8_t>(ModSource::LFO))
+                        ? static_cast<uint8_t>(ModSource::ModEnv)
+                        : static_cast<uint8_t>(ModSource::LFO);
+            mod_changed = true;
+        }
+        else
+        {
+            app.mod_route_selected = (app.mod_route_selected + 1) % kMaxModRoutes;
+            mod_sel_changed = true;
         }
     }
     if(b2_rise)
@@ -138,6 +171,12 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueu
                 pending_note_offs_[i].active = false;
             app.ui_dirty = true;
         }
+        else
+        {
+            ModRoute& r = app.mod_routes_ui[app.mod_route_selected % kMaxModRoutes];
+            r.enabled = r.enabled ? 0 : 1;
+            mod_changed = true;
+        }
     }
 
     // Pod encoder click toggles sat_on
@@ -147,28 +186,8 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueu
         input_detected = true;
         if(shift)
         {
-            // Hold10 test: 10 notes (60..69) + 11th note (72) to force one steal.
-            for(uint8_t n = 60; n <= 69; n++)
-            {
-                const Event on_evt = Event::NoteOnEvent(n, kVel);
-                if(evtq.Push(on_evt))
-                    app.events_pushed.fetch_add(1, std::memory_order_relaxed);
-                else
-                {
-                    app.queue_overflows.fetch_add(1, std::memory_order_relaxed);
-                    app.ui_dirty = true;
-                }
-            }
-
-            const Event extra_evt = Event::NoteOnEvent(72, kVel);
-            if(evtq.Push(extra_evt))
-                app.events_pushed.fetch_add(1, std::memory_order_relaxed);
-            else
-            {
-                app.queue_overflows.fetch_add(1, std::memory_order_relaxed);
-                app.ui_dirty = true;
-            }
-
+            app.macro_ui.selected = (app.macro_ui.selected + 1) % kNumMacros;
+            Macros_Publish(app, app.macro_ui);
             app.ui_dirty = true;
         }
         else
@@ -178,16 +197,37 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueu
         }
     }
 
-    // Pod encoder rotate: adjust sat_drive (or master_level with shift)
+    // Pod encoder rotate: adjust mod amount (or macro value with shift)
     const int32_t pod_inc = hw.encoder.Increment();
     if(pod_inc != 0)
     {
         input_detected = true;
         if(shift)
-            t.master_level = Clamp01(t.master_level + (float)pod_inc * enc_step_);
+        {
+            if(hw.button1.Pressed())
+            {
+                ModRoute& r = app.mod_routes_ui[app.mod_route_selected % kMaxModRoutes];
+                r.dst = (r.dst == static_cast<uint8_t>(ModDest::FilterCutoff))
+                            ? static_cast<uint8_t>(ModDest::Pitch)
+                            : static_cast<uint8_t>(ModDest::FilterCutoff);
+                mod_changed = true;
+            }
+            else
+            {
+                const uint8_t sel = app.macro_ui.selected % kNumMacros;
+                float v = app.macro_ui.value[sel];
+                v = Clamp01(v + (float)pod_inc * enc_step_);
+                app.macro_ui.value[sel] = v;
+                Macros_Publish(app, app.macro_ui);
+                app.ui_dirty = true;
+            }
+        }
         else
-            t.sat_drive = Clamp01(t.sat_drive + (float)pod_inc * enc_step_);
-        targets_changed = true;
+        {
+            ModRoute& r = app.mod_routes_ui[app.mod_route_selected % kMaxModRoutes];
+            r.amount = ClampSigned(r.amount + (float)pod_inc * enc_step_);
+            mod_changed = true;
+        }
     }
 
     // External encoder click toggles delay_on (proof-of-life)
@@ -234,6 +274,16 @@ void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueu
 
     if(targets_changed)
         params.PublishTargets();
+
+    if(mod_changed)
+    {
+        ModMatrix_Publish(app.mod_matrix, app.mod_routes_ui);
+        app.ui_dirty = true;
+    }
+    else if(mod_sel_changed)
+    {
+        app.ui_dirty = true;
+    }
 
     if(targets_changed)
         app.ui_dirty = true;

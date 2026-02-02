@@ -39,6 +39,13 @@ class UIRender
     uint32_t    last_voices_peak_1s_  = 0;
     uint32_t    last_voice_steals_    = 0;
     uint32_t    last_voice_packed_    = 0;
+    uint32_t    last_sample_index_   = 0;
+    uint32_t    last_fadeouts_started_ = 0;
+    uint32_t    last_vel_layer_      = 0;
+    int32_t     last_lfo_            = 0;
+    int32_t     last_env_            = 0;
+    uint32_t    last_lfo_rate_dbg_   = 0;
+    uint32_t    last_lfo_depth_dbg_  = 0;
 
     static int ToPct01(float x);
     void Render(const AppState& app, const Params& params);
