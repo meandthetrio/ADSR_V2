@@ -1,4 +1,5 @@
 #include "ui_logic.h"
+#include <atomic>
 #include <cmath>
 
 using namespace daisy;
@@ -27,61 +28,203 @@ void UILogic::Init(DaisyPod& hw)
                     Switch::Pull::PULL_UP);
 }
 
-void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params)
+void UILogic::ControlTick(DaisyPod& hw, AppState& app, Params& params, EventQueueSPSC& evtq)
 {
-    bool dirty = false;
+    bool targets_changed = false;
+
+    PerformParamsTargets& t = params.EditTargets();
 
     // Update external controls each tick
     ext_enc_.Debounce();
     shift_btn_.Debounce();
 
     const bool shift = shift_btn_.Pressed();
+    const uint32_t now_ms = System::GetNow();
+    bool input_detected = false;
+
+    if(shift != last_shift_)
+    {
+        last_shift_ = shift;
+        input_detected = true;
+    }
+
+    constexpr uint8_t kVel   = 100;
+
+    // 1-second rolling peak of active voices (sampled at control rate).
+    const uint32_t active_now = app.voices_active.load(std::memory_order_relaxed);
+    if(peak_window_start_ms_ == 0)
+    {
+        peak_window_start_ms_ = now_ms;
+        peak_active_          = active_now;
+        app.voices_peak_1s.store(peak_active_, std::memory_order_relaxed);
+    }
+    else
+    {
+        if(active_now > peak_active_)
+            peak_active_ = active_now;
+
+        // Keep OLED updated quickly for short bursts (e.g. stress test).
+        app.voices_peak_1s.store(peak_active_, std::memory_order_relaxed);
+
+        if((now_ms - peak_window_start_ms_) >= 1000)
+        {
+            app.voices_peak_1s.store(peak_active_, std::memory_order_relaxed);
+            peak_window_start_ms_ = now_ms;
+            peak_active_          = active_now;
+        }
+    }
+
+    // Drain scheduled NoteOffs (no heap; fixed list)
+    for(size_t i = 0; i < kMaxPendingNoteOffs; i++)
+    {
+        auto& slot = pending_note_offs_[i];
+        if(!slot.active)
+            continue;
+        if((int32_t)(now_ms - slot.due_ms) < 0)
+            continue;
+
+        const Event evt = Event::NoteOffEvent(slot.note);
+        if(evtq.Push(evt))
+        {
+            app.events_pushed.fetch_add(1, std::memory_order_relaxed);
+            slot.active = false;
+        }
+        else
+        {
+            app.queue_overflows.fetch_add(1, std::memory_order_relaxed);
+            app.ui_dirty = true;
+        }
+    }
+
+    const bool b1_rise = hw.button1.RisingEdge();
+    const bool b1_fall = hw.button1.FallingEdge();
+    const bool b2_rise = hw.button2.RisingEdge();
+    const bool b2_fall = hw.button2.FallingEdge();
+    if(b1_rise || b1_fall || b2_rise || b2_fall)
+        input_detected = true;
 
     // Pod buttons
-    if(hw.button1.RisingEdge())
+    if(b1_rise)
     {
-        params.targets.delay_on = !params.targets.delay_on;
-        dirty = true;
+        if(shift)
+        {
+            const Event evt = Event::TestPingEvent(1);
+            if(evtq.Push(evt))
+            {
+                app.events_pushed.fetch_add(1, std::memory_order_relaxed);
+            }
+            else
+            {
+                app.queue_overflows.fetch_add(1, std::memory_order_relaxed);
+                app.ui_dirty = true;
+            }
+        }
     }
-    if(hw.button2.RisingEdge())
+    if(b2_rise)
     {
-        params.targets.reverb_on = !params.targets.reverb_on;
-        dirty = true;
+        if(shift)
+        {
+            const Event evt = Event::AllNotesOffEvent();
+            if(evtq.Push(evt))
+                app.events_pushed.fetch_add(1, std::memory_order_relaxed);
+            else
+            {
+                app.queue_overflows.fetch_add(1, std::memory_order_relaxed);
+                app.ui_dirty = true;
+            }
+
+            // Cancel any scheduled NoteOffs from stress test.
+            for(size_t i = 0; i < kMaxPendingNoteOffs; i++)
+                pending_note_offs_[i].active = false;
+            app.ui_dirty = true;
+        }
     }
 
     // Pod encoder click toggles sat_on
-    if(hw.encoder.RisingEdge())
+    const bool enc_click = hw.encoder.RisingEdge();
+    if(enc_click)
     {
-        params.targets.sat_on = !params.targets.sat_on;
-        dirty = true;
+        input_detected = true;
+        if(shift)
+        {
+            // Poly stress test: burst 12 NoteOn immediately, then schedule NoteOffs at +200ms.
+            static constexpr uint8_t kNotes[12] = {60, 62, 64, 65, 67, 69, 71, 72, 74, 76, 77, 79};
+
+            // Clear pending list and schedule fresh NoteOffs.
+            for(size_t i = 0; i < kMaxPendingNoteOffs; i++)
+                pending_note_offs_[i].active = false;
+
+            const uint32_t due = now_ms + 200;
+            for(size_t i = 0; i < 12; i++)
+            {
+                const uint8_t n = kNotes[i];
+
+                const Event on_evt = Event::NoteOnEvent(n, kVel);
+                if(evtq.Push(on_evt))
+                {
+                    app.events_pushed.fetch_add(1, std::memory_order_relaxed);
+                }
+                else
+                {
+                    app.queue_overflows.fetch_add(1, std::memory_order_relaxed);
+                    app.ui_dirty = true;
+                }
+
+                // Schedule NoteOff
+                if(i < kMaxPendingNoteOffs)
+                {
+                    pending_note_offs_[i].active = true;
+                    pending_note_offs_[i].note   = n;
+                    pending_note_offs_[i].due_ms = due;
+                }
+            }
+
+            // Make the stress result visible quickly (voices/steals will update in audio thread).
+            app.ui_dirty = true;
+        }
+        else
+        {
+            t.sat_on = !t.sat_on;
+            targets_changed = true;
+        }
     }
 
     // Pod encoder rotate: adjust sat_drive (or master_level with shift)
     const int32_t pod_inc = hw.encoder.Increment();
     if(pod_inc != 0)
     {
+        input_detected = true;
         if(shift)
-            params.targets.master_level = Clamp01(params.targets.master_level + (float)pod_inc * enc_step_);
+            t.master_level = Clamp01(t.master_level + (float)pod_inc * enc_step_);
         else
-            params.targets.sat_drive = Clamp01(params.targets.sat_drive + (float)pod_inc * enc_step_);
-        dirty = true;
+            t.sat_drive = Clamp01(t.sat_drive + (float)pod_inc * enc_step_);
+        targets_changed = true;
     }
 
     // External encoder click toggles delay_on (proof-of-life)
-    if(ext_enc_.RisingEdge())
+    const bool ext_click = ext_enc_.RisingEdge();
+    if(ext_click)
     {
-        params.targets.delay_on = !params.targets.delay_on;
-        dirty = true;
+        input_detected = true;
+        t.delay_on = !t.delay_on;
+        targets_changed = true;
     }
 
     // External encoder rotate adjusts delay_mix (proof-of-life)
     const int32_t ext_inc = ext_enc_.Increment();
     if(ext_inc != 0)
     {
-        params.targets.delay_mix = Clamp01(params.targets.delay_mix + (float)ext_inc * enc_step_);
-        dirty = true;
+        input_detected = true;
+        t.delay_mix = Clamp01(t.delay_mix + (float)ext_inc * enc_step_);
+        targets_changed = true;
     }
 
-    if(dirty)
+    if(targets_changed)
+        params.PublishTargets();
+
+    if(targets_changed)
         app.ui_dirty = true;
+
+    if(input_detected)
+        app.last_input_ms = now_ms;
 }

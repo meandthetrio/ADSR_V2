@@ -1,11 +1,7 @@
 #pragma once
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <cmath>
-
-// Step 4: Smoothing (control-rate).
-// - UI writes only `targets`.
-// - Audio reads only `current`.
-// - ControlTick moves current -> targets gradually.
 
 struct PerformParamsTargets
 {
@@ -38,17 +34,24 @@ class Params
   public:
     void Init();
 
-    // Call at control-rate (main loop). Pass elapsed time since last call.
-    // Using dt seconds makes smoothing stable even if loop timing changes.
-    void ControlTick(float dt_sec);
+    // MAIN LOOP ONLY: edit unpublished targets.
+    PerformParamsTargets& EditTargets();
 
-    PerformParamsTargets targets;
+    // MAIN LOOP ONLY: publish edited targets to the audio thread.
+    void PublishTargets();
+
+    // MAIN LOOP ONLY: safe view of last published targets (OLED).
+    const PerformParamsTargets& TargetsForUI() const;
+
+    // AUDIO THREAD ONLY: smoothed params used for DSP.
+    void AudioBlockTick(float sample_rate, size_t block_size);
+
     PerformParamsCurrent current;
 
   private:
-    // “How quickly do we catch up?” Higher = snappier, lower = smoother.
-    // Think of it like a spring strength.
-    float smoothing_hz_ = 15.0f;
+    PerformParamsTargets targets_buf_[2];
+    std::atomic<uint8_t> published_idx_{0};
+    uint8_t              write_idx_ = 1;
 
     // Helper: one-pole smoothing toward target
     static float SmoothToward(float current, float target, float coeff);

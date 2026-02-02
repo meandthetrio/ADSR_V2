@@ -8,6 +8,8 @@ CPP_SOURCES += params.cpp
 CPP_SOURCES += audio_engine.cpp
 CPP_SOURCES += ui_logic.cpp
 CPP_SOURCES += ui_render.cpp
+CPP_SOURCES += oled_pager.cpp
+CPP_SOURCES += voice_engine.cpp
 
 # Library Locations
 LIBDAISY_DIR = ../../libDaisy
