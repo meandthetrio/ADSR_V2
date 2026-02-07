@@ -98,6 +98,7 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
                          g_params.current.env_attack_ms,
                          g_params.current.env_decay_ms,
                          g_params.current.env_amount);
+    g_voice.SetLfoWave(g_app.lfo_wave.load(std::memory_order_relaxed));
     g_voice.ProcessEvents(g_evtq);
     g_voice.SetLpfCutoff(g_params.current.lpf_cutoff_hz);
     g_voice.RenderBlock(out[0], out[1], size);
@@ -277,10 +278,10 @@ int main(void)
         if(ticks_to_run > kMaxCtrlTicksPerLoop)
             ticks_to_run = kMaxCtrlTicksPerLoop;
 
+        // Control tick owns hardware input scanning.
         for(int i = 0; i < ticks_to_run; ++i)
         {
             // Predictable scan cadence so edges can't be "missed" between reads.
-            hw.ProcessDigitalControls();
             g_ui.ControlTick(hw, g_app, g_params, g_evtq);
 
             ctrl_ticks_accum++;
@@ -307,6 +308,8 @@ int main(void)
             last_peak_reset_ms = now_ms;
         }
 
+        // UI tick owns UI state + drawing; never polls hardware directly.
+        g_ui.UiTick(g_app, g_params, g_evtq, now_ms);
         g_render.Tick(g_app, g_params);
         g_render.TickOledTransfer(now_ms, midi_busy);
     }

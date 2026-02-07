@@ -18,6 +18,11 @@ void GlobalLFO::SetRateHz(float rate_hz)
     phase_inc = rate_hz / sample_rate;
 }
 
+void GlobalLFO::SetWave(uint8_t w)
+{
+    wave = (w == 0) ? 0 : 1;
+}
+
 void GlobalLFO::TickBlock(size_t n)
 {
     phase += phase_inc * static_cast<float>(n);
@@ -27,7 +32,9 @@ void GlobalLFO::TickBlock(size_t n)
 
 float GlobalLFO::Value() const
 {
-    return static_cast<float>(std::sin(phase * kTwoPi));
+    if(wave == 0)
+        return static_cast<float>(std::sin(phase * kTwoPi));
+    return (phase < 0.5f) ? 1.0f : -1.0f;
 }
 
 void ModEnv::Init(float sample_rate_hz)

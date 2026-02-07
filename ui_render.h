@@ -8,7 +8,7 @@
 
 // UI Render Layer:
 // - Draw only.
-// - Uses app.ui_dirty and a 30Hz timer.
+// - Uses app.ui_dirty and a 60Hz timer.
 // - Does NOT change params or read controls.
 
 class UIRender
@@ -23,6 +23,8 @@ class UIRender
   private:
     OledPager   oled_pager_;
     uint32_t    last_ui_ms_ = 0;
+    uint32_t    ui_ticks_accum_ = 0;
+    uint32_t    ui_window_start_ms_ = 0;
     uint32_t    last_stats_ms_ = 0;
     uint32_t    last_events_pushed_   = 0;
     uint32_t    last_events_popped_   = 0;
@@ -47,6 +49,5 @@ class UIRender
     uint32_t    last_lfo_rate_dbg_   = 0;
     uint32_t    last_lfo_depth_dbg_  = 0;
 
-    static int ToPct01(float x);
     void Render(const AppState& app, const Params& params);
 };

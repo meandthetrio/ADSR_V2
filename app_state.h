@@ -5,6 +5,12 @@
 #include "mod_matrix.h"
 #include "plocks.h"
 #include "macros.h"
+#include "ui_input.h"
+#include "ui_screens.h"
+#include "ui_list_menu.h"
+#include "ui_value_edit.h"
+#include "ui_overlay.h"
+#include "ui_requests.h"
 
 enum class PerformPage : uint8_t
 {
@@ -60,6 +66,8 @@ struct AppState
     PLocksState plocks{};
     Pattern     plock_pattern{};
     bool        seq_running = true;
+    bool        plock_apply_enabled = true;
+    std::atomic<uint8_t> lfo_wave{0}; // 0=SINE, 1=PULSE
     uint32_t    seq_bpm = 120;
     uint32_t    seq_last_ms = 0;
     uint32_t    seq_accum_ms = 0;
@@ -73,5 +81,43 @@ struct AppState
 
     // Main-loop owned UI helpers (not accessed from audio thread).
     uint32_t last_input_ms = 0;
+    uint32_t ui_hz         = 0;
     uint32_t ctrl_hz       = 0;
+    UiInputQueue ui_in{};
+    uint32_t ui_in_push    = 0;
+    uint32_t ui_in_pop     = 0;
+    uint32_t ui_in_ovf     = 0;
+    uint32_t ui_in_hi      = 0;
+    UiReqQueue ui_req_q{};
+    uint32_t ui_req_ovf = 0;
+    uint32_t ui_req_push = 0;
+    uint32_t ui_req_pop = 0;
+    bool     ui_req_busy = false;
+    UiReqType ui_req_active = UiReqType::None;
+    uint8_t  ui_req_progress = 0;
+    int8_t   ui_req_result = 0;
+    uint16_t ui_req_arg0 = 0;
+    uint32_t ui_req_done_count = 0;
+    uint32_t ui_req_work_units_done = 0;
+    uint32_t ui_req_work_units_total = 0;
+    UiNav    ui_nav{};
+    UiListMenu hud_menu{};
+    bool     hud_menu_inited = false;
+    bool     ui_shift_held = false;
+    bool     ui_btn1_held  = false;
+    bool     ui_btn2_held  = false;
+    UiValueEdit value_edit{};
+    uint8_t fx_field_cursor = 0;
+    uint8_t mod_field_cursor = 0;
+    UiOverlayState overlay{};
+    uint16_t render_ms = 0;
+    uint16_t render_hi_ms = 0;
+    uint32_t render_skips = 0;
+    uint32_t render_frames = 0;
+    uint32_t render_cooldown_until_ms = 0;
 };
+
+static inline const char* WaveChar(uint8_t w)
+{
+    return (w == 0) ? "S" : "P";
+}

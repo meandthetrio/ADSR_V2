@@ -145,6 +145,7 @@ class VoiceEngine
                       float env_attack_ms,
                       float env_decay_ms,
                       float env_amount);
+    void SetLfoWave(uint8_t wave);
     void SetLoopMode(LoopMode mode)
     {
         loop_mode_.store(static_cast<uint8_t>(mode), std::memory_order_relaxed);
@@ -177,6 +178,7 @@ class VoiceEngine
     int32_t stop_fade_samples_        = 0;
     float lfo_rate_hz_ = 1.0f;
     float lfo_depth_   = 0.5f;
+    uint8_t lfo_wave_  = 0;
     float env_attack_ms_ = 5.0f;
     float env_decay_ms_  = 120.0f;
     float env_amount_    = 0.5f;

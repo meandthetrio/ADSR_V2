@@ -254,6 +254,11 @@ void VoiceEngine::SetModParams(float lfo_rate_hz,
     env_amount_    = env_amount;
 }
 
+void VoiceEngine::SetLfoWave(uint8_t wave)
+{
+    lfo_wave_ = (wave == 0) ? 0 : 1;
+}
+
 void VoiceEngine::StartStopFade_(Voice& v)
 {
     if(v.stop_fade_active)
@@ -749,6 +754,7 @@ void VoiceEngine::RenderBlock(float* outL, float* outR, size_t size)
 
     depth = lfo_depth;
     lfo_.SetRateHz(rate_hz);
+    lfo_.SetWave(lfo_wave_);
     const float lfo_val = lfo_.Value();
     lfo_.TickBlock(size);
     const float lfo_src = lfo_val * depth;

@@ -7,12 +7,14 @@ struct GlobalLFO
 {
     void Init(float sample_rate_hz);
     void SetRateHz(float rate_hz);
+    void SetWave(uint8_t wave);
     void TickBlock(size_t n);
     float Value() const;
 
     float phase = 0.0f;
     float phase_inc = 0.0f;
     float sample_rate = 48000.0f;
+    uint8_t wave = 0;
 };
 
 enum class ModEnvStage : uint8_t
