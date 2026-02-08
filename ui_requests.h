@@ -10,6 +10,13 @@ enum class UiReqType : uint8_t
     RebuildCache,
     LoadSample,
     SavePreset,
+    ScanSdWavs,
+    LoadWavIndex,
+    NormalizeCurrent,
+    LoopFindCurrent,
+    SaveRenderedWavCurrent,
+    SaveProject,
+    LoadProject,
     COUNT
 };
 

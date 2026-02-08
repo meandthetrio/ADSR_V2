@@ -66,6 +66,33 @@ static void AudioCallback(AudioHandle::InputBuffer  in,
     const uint32_t start_cycles = DWT->CYCCNT;
     (void)in;
 
+    const uint8_t ready = g_app.sd_published_ready.load(std::memory_order_acquire);
+    const uint32_t pub_gen = g_app.sd_published_gen.load(std::memory_order_acquire);
+    const uint32_t applied_gen = g_app.sd_applied_gen.load(std::memory_order_acquire);
+    if(ready && pub_gen != applied_gen)
+    {
+        uint8_t slot = g_app.sd_published_slot.load(std::memory_order_acquire);
+        if(slot >= kSdSampleSlots)
+            slot = 0;
+        g_voice.SetSample(&g_app.sd_slots[slot]);
+        g_app.sd_applied_gen.store(pub_gen, std::memory_order_release);
+        g_app.sd_current_slot.store(slot, std::memory_order_release);
+        g_app.sd_published_ready.store(0, std::memory_order_release);
+    }
+
+    const uint8_t edit_ready = g_app.sd_edit_ready.load(std::memory_order_acquire);
+    const uint32_t edit_gen = g_app.sd_edit_gen.load(std::memory_order_acquire);
+    const uint32_t edit_applied = g_app.sd_edit_applied_gen.load(std::memory_order_acquire);
+    if(edit_ready && edit_gen != edit_applied)
+    {
+        uint8_t slot = g_app.sd_edit_slot.load(std::memory_order_acquire);
+        if(slot >= kSdSampleSlots)
+            slot = 0;
+        g_voice.SetSampleEdit(g_app.sd_edit_pending, &g_app.sd_slots[slot]);
+        g_app.sd_edit_applied_gen.store(edit_gen, std::memory_order_release);
+        g_app.sd_edit_ready.store(0, std::memory_order_release);
+    }
+
     g_params.AudioBlockTick(g_sample_rate_hz, size);
 
     static MacroState s_active_macros{};
@@ -241,7 +268,12 @@ int main(void)
                     const uint8_t idx = Keygroups_SelectSampleIndex(note_on.note);
                     const uint8_t layer = Velocity_SelectLayer(note_on.velocity);
                     Event evt = Event::NoteOnEvent(note_on.note, note_on.velocity);
-                    evt.value = (uint32_t)idx | ((uint32_t)layer << 8);
+                    uint8_t sample_idx = idx;
+                    const uint8_t cur_slot = g_app.sd_current_slot.load(std::memory_order_acquire);
+                    const Sample& sd_sample = g_app.sd_slots[cur_slot];
+                    if(sd_sample.pcm != nullptr && sd_sample.length > 0)
+                        sample_idx = 0xFFu;
+                    evt.value = (uint32_t)sample_idx | ((uint32_t)layer << 8);
                     g_app.last_sample_index.store(idx, std::memory_order_relaxed);
                     g_app.last_vel_layer.store(layer, std::memory_order_relaxed);
                     g_app.last_velocity.store(note_on.velocity, std::memory_order_relaxed);

@@ -11,6 +11,10 @@
 #include "ui_value_edit.h"
 #include "ui_overlay.h"
 #include "ui_requests.h"
+#include "sd_browser_state.h"
+#include "sampler_sample.h"
+#include "sd_sample_pool.h"
+#include "sample_edit.h"
 
 enum class PerformPage : uint8_t
 {
@@ -101,6 +105,7 @@ struct AppState
     uint32_t ui_req_work_units_done = 0;
     uint32_t ui_req_work_units_total = 0;
     UiNav    ui_nav{};
+    UiScreenId ui_active_screen = UiScreenId::Hud;
     UiListMenu hud_menu{};
     bool     hud_menu_inited = false;
     bool     ui_shift_held = false;
@@ -115,6 +120,24 @@ struct AppState
     uint32_t render_skips = 0;
     uint32_t render_frames = 0;
     uint32_t render_cooldown_until_ms = 0;
+    SdBrowserState sd{};
+    Sample sd_slots[kSdSampleSlots]{};
+    std::atomic<uint8_t> sd_current_slot{0};
+    std::atomic<uint8_t> sd_published_slot{0};
+    std::atomic<uint8_t> sd_published_ready{0};
+    std::atomic<uint32_t> sd_published_gen{0};
+    std::atomic<uint32_t> sd_applied_gen{0};
+    SampleEdit sd_edit_slots[kSdSampleSlots]{};
+    SampleEdit sd_edit_pending{};
+    std::atomic<uint8_t> sd_edit_slot{0};
+    std::atomic<uint8_t> sd_edit_ready{0};
+    std::atomic<uint32_t> sd_edit_gen{0};
+    std::atomic<uint32_t> sd_edit_applied_gen{0};
+    UiListMenu sample_edit_menu{};
+    bool sample_edit_menu_inited = false;
+    char project_status[16] = {};
+    bool project_edit_pending = false;
+    SampleEdit project_pending_edit{};
 };
 
 static inline const char* WaveChar(uint8_t w)

@@ -5,23 +5,9 @@
 #include "oled_pager.h"
 
 #include <cstdio>
+#include <cstring>
 
 using namespace daisy;
-
-static char ReqChar(UiReqType type)
-{
-    switch(type)
-    {
-        case UiReqType::RebuildCache:
-            return 'R';
-        case UiReqType::LoadSample:
-            return 'L';
-        case UiReqType::SavePreset:
-            return 'S';
-        default:
-            return '-';
-    }
-}
 
 void UiOverlay_Update(UiOverlayState& o, uint32_t now_ms, bool shift_held, bool editing)
 {
@@ -49,13 +35,29 @@ void UiOverlay_Render(const AppState& app, const UiLayout& layout, OledPager& ol
     uint32_t hi = app.ui_in_hi;
     if(hi > 99u)
         hi = 99u;
-    const uint32_t skip_mod = app.render_skips % 1000u;
     uint16_t rf = app.render_ms;
     uint16_t rhi = app.render_hi_ms;
     if(rf > 99u) rf = 99u;
     if(rhi > 99u) rhi = 99u;
-    const char job_char = app.ui_req_busy ? ReqChar(app.ui_req_active) : '-';
-    const uint32_t job_pct = app.ui_req_busy ? app.ui_req_progress : 0;
+    const uint32_t skip_mod = app.render_skips % 1000u;
+    const char* sd_ok = app.sd.sd_ok ? "OK" : "ER";
+    uint32_t wavs = app.sd.wav_count;
+    if(wavs > 99u)
+        wavs = 99u;
+    const uint32_t ld = app.sd.load_in_progress ? app.sd.load_progress : 0;
+    const uint32_t save_pct = app.sd.save_in_progress ? app.sd.save_progress : 0;
+    const char* save_state = "IDLE";
+    if(app.sd.save_in_progress)
+        save_state = "BUSY";
+    else if(app.sd.save_status[0] != '\0')
+    {
+        if(std::strncmp(app.sd.save_status, "SAVED", 5) == 0)
+            save_state = "OK";
+        else if(std::strncmp(app.sd.save_status, "SAVE ERR", 8) == 0)
+            save_state = "ERR";
+        else
+            save_state = app.sd.save_status;
+    }
 
     char buf[32];
     const int x = layout.x;
@@ -76,17 +78,24 @@ void UiOverlay_Render(const AppState& app, const UiLayout& layout, OledPager& ol
     oled.WriteString(buf, Font_6x8, true);
 
     oled.SetCursor(x, y + layout.line_h * 2);
-    std::snprintf(buf, sizeof(buf), "UIQO:%03lu H:%02lu RF:%02u",
+    std::snprintf(buf, sizeof(buf), "QO:%03lu H:%02lu R:%02u/%02u",
                   (unsigned long)ovf_mod,
                   (unsigned long)hi,
-                  (unsigned)rf);
+                  (unsigned)rf,
+                  (unsigned)rhi);
     oled.WriteString(buf, Font_6x8, true);
 
     oled.SetCursor(x, y + layout.line_h * 3);
-    std::snprintf(buf, sizeof(buf), "JOB:%c%03lu RH:%02u SK:%03lu",
-                  job_char,
-                  (unsigned long)job_pct,
-                  (unsigned)rhi,
+    std::snprintf(buf, sizeof(buf), "SD:%s W%02lu L%03lu S%03lu",
+                  sd_ok,
+                  (unsigned long)wavs,
+                  (unsigned long)ld,
                   (unsigned long)skip_mod);
+    oled.WriteString(buf, Font_6x8, true);
+
+    oled.SetCursor(x, y + layout.line_h * 4);
+    std::snprintf(buf, sizeof(buf), "SAVE:%s %03lu",
+                  save_state,
+                  (unsigned long)save_pct);
     oled.WriteString(buf, Font_6x8, true);
 }

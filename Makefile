@@ -1,6 +1,7 @@
 # Project Name
 TARGET = ADSR_V2
 APP_TYPE = BOOT_QSPI
+USE_FATFS = 1
 
 # Sources
 CPP_SOURCES = main.cpp
@@ -17,6 +18,8 @@ CPP_SOURCES += ui_layout.cpp
 CPP_SOURCES += ui_overlay.cpp
 CPP_SOURCES += ui_requests.cpp
 CPP_SOURCES += ui_worker.cpp
+CPP_SOURCES += sd_browser_state.cpp
+CPP_SOURCES += sd_sample_pool.cpp
 CPP_SOURCES += oled_pager.cpp
 CPP_SOURCES += voice_engine.cpp
 CPP_SOURCES += keygroups.cpp

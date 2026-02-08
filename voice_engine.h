@@ -9,6 +9,7 @@
 
 #include "event_queue.h"
 #include "sampler_sample.h"
+#include "sample_edit.h"
 #include "mod_sources.h"
 #include "mod_matrix.h"
 #include "plocks.h"
@@ -127,6 +128,11 @@ class VoiceEngine
 
     void SetSampleBank(const Sample* const* bank, uint8_t count);
     void SetSample(const Sample* sample) { current_sample_ = sample; }
+    void SetSampleEdit(const SampleEdit& edit, const Sample* sample)
+    {
+        current_edit_ = edit;
+        edit_sample_ = sample;
+    }
     void SetLpfCutoff(float hz) { lpf_cutoff_hz_ = hz; }
     void SetModMatrix(const ModMatrixState* state) { mod_matrix_ = state; }
     void SetPLocks(const PLocksState* state) { plocks_ = state; }
@@ -173,6 +179,8 @@ class VoiceEngine
     const Sample* sample_bank_[kMaxSampleBank] = {};
     uint8_t sample_bank_count_ = 0;
     const Sample* current_sample_     = nullptr;
+    const Sample* edit_sample_        = nullptr;
+    SampleEdit current_edit_{};
     float lpf_cutoff_hz_              = 12000.0f;
     std::atomic<uint8_t> loop_mode_{static_cast<uint8_t>(LoopMode::Forward)};
     int32_t stop_fade_samples_        = 0;

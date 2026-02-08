@@ -198,6 +198,19 @@ void UILogic::UiTick(AppState& app, Params& params, EventQueueSPSC& evtq, uint32
         UiRouter_DispatchEvent(ctx, e);
     }
 
+    const UiScreenId active_screen = UiNav_Active(app.ui_nav);
+    if(active_screen != app.ui_active_screen)
+    {
+        app.ui_active_screen = active_screen;
+        const UiScreen& s = GetScreen(active_screen);
+        if(s.OnEnter)
+        {
+            ctx.shift = app.ui_shift_held;
+            s.OnEnter(ctx);
+        }
+        app.ui_dirty = true;
+    }
+
     UiOverlay_Update(app.overlay, now_ms, app.ui_shift_held, app.value_edit.active);
 
     app.ui_in_ovf = UiInput_Dropped(app.ui_in);

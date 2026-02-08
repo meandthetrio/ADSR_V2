@@ -13,6 +13,8 @@ enum class UiScreenId : uint8_t
     Fx,
     Mod,
     Macro,
+    SdBrowse,
+    SampleEdit,
     COUNT
 };
 

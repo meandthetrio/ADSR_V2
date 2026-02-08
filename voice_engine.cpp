@@ -186,6 +186,40 @@ static inline float SampleAtLinear(const Sample* s, float pos, bool wrap_end)
     return fa + frac * (fb - fa);
 }
 
+static inline float SampleAtLinearRegion(const Sample* s,
+                                         float pos,
+                                         uint32_t start,
+                                         uint32_t end,
+                                         bool loop_enabled,
+                                         uint32_t loop_start,
+                                         uint32_t loop_end)
+{
+    if(s == nullptr || s->pcm == nullptr || s->length == 0)
+        return 0.0f;
+    if(end <= start || end > s->length)
+        end = s->length;
+    if(pos < (float)start || pos >= (float)end)
+        return 0.0f;
+
+    const uint32_t i = static_cast<uint32_t>(pos);
+    if(i < start || i >= end)
+        return 0.0f;
+    const float frac = pos - static_cast<float>(i);
+    const int16_t a = s->pcm[i];
+    uint32_t next = i + 1;
+    if(next >= end)
+    {
+        if(loop_enabled && loop_start < loop_end)
+            next = loop_start;
+        else
+            next = i;
+    }
+    const int16_t b = s->pcm[next];
+    const float fa = static_cast<float>(a) * (1.0f / 32768.0f);
+    const float fb = static_cast<float>(b) * (1.0f / 32768.0f);
+    return fa + frac * (fb - fa);
+}
+
 void VoiceEngine::BindDebug(std::atomic<uint32_t>* events_popped,
                             std::atomic<uint32_t>* voices_active,
                             std::atomic<uint32_t>* voice_steals,
@@ -362,6 +396,8 @@ void VoiceEngine::Init(float sample_rate, size_t block_size)
     last_new_start_id_       = 0;
     sample_bank_count_       = 0;
     current_sample_          = nullptr;
+    edit_sample_             = nullptr;
+    current_edit_            = SampleEdit_Default(0);
 
     for(uint8_t i = 0; i < kMaxSampleBank; ++i)
         sample_bank_[i] = nullptr;
@@ -410,7 +446,14 @@ void VoiceEngine::StartVoice_(Voice& v,
     v.start_id = start_id;
 
     v.sample = sample;
-    v.pos    = 0.0f;
+    float start_pos = 0.0f;
+    if(edit_sample_ == sample)
+    {
+        SampleEdit e = current_edit_;
+        SampleEdit_Clamp(e, sample->length);
+        start_pos = static_cast<float>(e.start_frame);
+    }
+    v.pos    = start_pos;
     v.ratio  = ComputeRatio(note, sample->root_key);
     const float vel01 = (velocity > 127) ? 1.0f : ((float)velocity / 127.0f);
     v.gain = vel01 * kVoiceAmpScale;
@@ -572,6 +615,12 @@ void VoiceEngine::ProcessEvents(EventQueueSPSC& q)
                         v.old_dir  = v.dir;
 
                         v.new_pos = 0.0f;
+                        if(edit_sample_ == sample)
+                        {
+                            SampleEdit e = current_edit_;
+                            SampleEdit_Clamp(e, sample->length);
+                            v.new_pos = static_cast<float>(e.start_frame);
+                        }
                         v.new_ratio = ComputeRatio(note, sample->root_key);
                         v.new_gain = vel01 * kVoiceAmpScale;
                         v.new_fade_in = 0.0f;
@@ -664,6 +713,9 @@ void VoiceEngine::RenderBlock(float* outL, float* outR, size_t size)
             lock_gen_seen_ = gen;
         }
     }
+
+    const SampleEdit edit = current_edit_;
+    const Sample* edit_sample = edit_sample_;
 
     float cutoff_norm = 0.0f;
     if(active_lock_.enabled)
@@ -855,25 +907,54 @@ void VoiceEngine::RenderBlock(float* outL, float* outR, size_t size)
 
             float old_pos = v.old_pos;
             float new_pos = v.new_pos;
-            const float length_f = static_cast<float>(v.sample->length);
-            const float ls = static_cast<float>(v.sample->loop_start);
-            const float le = static_cast<float>(v.sample->loop_end);
-            const bool loop_enabled = v.sample->loop_enabled;
-            if(loop_enabled)
-            {
-                if(old_pos >= length_f)
-                    old_pos -= length_f;
-                if(new_pos >= length_f)
-                    new_pos -= length_f;
-            }
-            const float old_ratio = v.old_ratio * pitch_scale;
-            const float new_ratio = v.new_ratio * pitch_scale;
-            const float old_gain = v.old_gain;
-            const float new_gain = v.new_gain;
             bool old_gate = v.old_gate;
             bool new_gate = v.new_gate;
             int8_t old_dir = v.old_dir;
             int8_t new_dir = v.new_dir;
+            bool use_edit = (edit_sample != nullptr && v.sample == edit_sample);
+            SampleEdit e = edit;
+            uint32_t start = 0;
+            uint32_t end = v.sample->length;
+            uint32_t ls_i = v.sample->loop_start;
+            uint32_t le_i = v.sample->loop_end;
+            bool loop_enabled = v.sample->loop_enabled;
+            float edit_gain = 1.0f;
+            if(use_edit)
+            {
+                SampleEdit_Clamp(e, v.sample->length);
+                start = e.start_frame;
+                end = e.end_frame;
+                ls_i = e.loop_start;
+                le_i = e.loop_end;
+                loop_enabled = (e.loop_enable != 0);
+                edit_gain = e.gain;
+            }
+            const float length_f = static_cast<float>(end);
+            const float ls = static_cast<float>(ls_i);
+            const float le = static_cast<float>(le_i);
+            if(loop_enabled && old_pos >= length_f)
+                old_pos = ls + (old_pos - length_f);
+            if(loop_enabled && new_pos >= length_f)
+                new_pos = ls + (new_pos - length_f);
+            if(old_pos < static_cast<float>(start))
+                old_pos = static_cast<float>(start);
+            if(new_pos < static_cast<float>(start))
+                new_pos = static_cast<float>(start);
+            if(!loop_enabled && old_pos >= length_f && length_f > 0.0f)
+            {
+                old_gate = false;
+                old_pos = length_f - 1.0f;
+            }
+            if(!loop_enabled && new_pos >= length_f && length_f > 0.0f)
+            {
+                new_gate = false;
+                new_pos = length_f - 1.0f;
+            }
+
+            const float old_ratio = v.old_ratio * pitch_scale;
+            const float new_ratio = v.new_ratio * pitch_scale;
+            const float old_gain = v.old_gain * edit_gain;
+            const float new_gain = v.new_gain * edit_gain;
             float x = v.xfade_pos;
             const float x_step = v.xfade_step;
             float new_fade = v.new_fade_in;
@@ -898,14 +979,36 @@ void VoiceEngine::RenderBlock(float* outL, float* outR, size_t size)
                 if(x_clamped > 1.0f)
                     x_clamped = 1.0f;
 
-                const bool old_wrap = (loop_enabled && old_gate
-                                       && v.sample->loop_start == 0
-                                       && v.sample->loop_end == v.sample->length);
-                const bool new_wrap = (loop_enabled && new_gate
-                                       && v.sample->loop_start == 0
-                                       && v.sample->loop_end == v.sample->length);
-                const float s_old = SampleAtLinear(v.sample, old_pos, old_wrap) * old_gain;
-                float s_new = SampleAtLinear(v.sample, new_pos, new_wrap) * new_gain;
+                float s_old = 0.0f;
+                float s_new = 0.0f;
+                if(use_edit)
+                {
+                    s_old = SampleAtLinearRegion(v.sample,
+                                                 old_pos,
+                                                 start,
+                                                 end,
+                                                 loop_enabled,
+                                                 ls_i,
+                                                 le_i) * old_gain;
+                    s_new = SampleAtLinearRegion(v.sample,
+                                                 new_pos,
+                                                 start,
+                                                 end,
+                                                 loop_enabled,
+                                                 ls_i,
+                                                 le_i) * new_gain;
+                }
+                else
+                {
+                    const bool old_wrap = (loop_enabled && old_gate
+                                           && v.sample->loop_start == 0
+                                           && v.sample->loop_end == v.sample->length);
+                    const bool new_wrap = (loop_enabled && new_gate
+                                           && v.sample->loop_start == 0
+                                           && v.sample->loop_end == v.sample->length);
+                    s_old = SampleAtLinear(v.sample, old_pos, old_wrap) * old_gain;
+                    s_new = SampleAtLinear(v.sample, new_pos, new_wrap) * new_gain;
+                }
                 s_new *= new_env_level;
                 const float fin_new = (new_fade < 1.0f) ? new_fade : 1.0f;
                 s_new *= fin_new;
@@ -1043,17 +1146,36 @@ void VoiceEngine::RenderBlock(float* outL, float* outR, size_t size)
 
             float pos = v.pos;
             const float ratio = v.ratio * pitch_scale;
-            const float gain  = v.gain;
-            const float length_f = static_cast<float>(v.sample->length);
-            const float ls = static_cast<float>(v.sample->loop_start);
-            const float le = static_cast<float>(v.sample->loop_end);
-            const bool loop_enabled = v.sample->loop_enabled;
+            bool use_edit = (edit_sample != nullptr && v.sample == edit_sample);
+            SampleEdit e = edit;
+            uint32_t start = 0;
+            uint32_t end = v.sample->length;
+            uint32_t ls_i = v.sample->loop_start;
+            uint32_t le_i = v.sample->loop_end;
+            bool loop_enabled = v.sample->loop_enabled;
+            float edit_gain = 1.0f;
+            if(use_edit)
+            {
+                SampleEdit_Clamp(e, v.sample->length);
+                start = e.start_frame;
+                end = e.end_frame;
+                ls_i = e.loop_start;
+                le_i = e.loop_end;
+                loop_enabled = (e.loop_enable != 0);
+                edit_gain = e.gain;
+            }
+            const float gain  = v.gain * edit_gain;
+            const float length_f = static_cast<float>(end);
+            const float ls = static_cast<float>(ls_i);
+            const float le = static_cast<float>(le_i);
             bool gate = v.gate;
             int8_t dir = v.dir;
             if(stop_fade_active)
                 gate = false;
             if(loop_enabled && gate && pos >= length_f)
-                pos -= length_f;
+                pos = ls + (pos - length_f);
+            if(pos < static_cast<float>(start))
+                pos = static_cast<float>(start);
             float fade = v.fade_in;
             const float fade_step = v.fade_in_step;
             EnvStage env_stage = v.env_stage;
@@ -1066,10 +1188,24 @@ void VoiceEngine::RenderBlock(float* outL, float* outR, size_t size)
 
             for(size_t i = 0; i < size; i++)
             {
-                const bool wrap_end = (loop_enabled && gate
-                                       && v.sample->loop_start == 0
-                                       && v.sample->loop_end == v.sample->length);
-                float s = SampleAtLinear(v.sample, pos, wrap_end) * gain;
+                float s = 0.0f;
+                if(use_edit)
+                {
+                    s = SampleAtLinearRegion(v.sample,
+                                             pos,
+                                             start,
+                                             end,
+                                             loop_enabled,
+                                             ls_i,
+                                             le_i) * gain;
+                }
+                else
+                {
+                    const bool wrap_end = (loop_enabled && gate
+                                           && v.sample->loop_start == 0
+                                           && v.sample->loop_end == v.sample->length);
+                    s = SampleAtLinear(v.sample, pos, wrap_end) * gain;
+                }
                 s *= env_level;
                 const float fin = (fade < 1.0f) ? fade : 1.0f;
                 s *= fin;

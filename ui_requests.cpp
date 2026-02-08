@@ -7,6 +7,14 @@ static_assert((UiReqQueue::kCapacity & (UiReqQueue::kCapacity - 1)) == 0,
 
 bool UiReq_Push(AppState& app, const UiReq& r)
 {
+    if(r.type == UiReqType::LoadWavIndex)
+    {
+        app.sd.load_pending = true;
+        app.sd.load_pending_index = r.a;
+        app.ui_req_push++;
+        return true;
+    }
+
     UiReqQueue& q = app.ui_req_q;
     const uint32_t head = q.head;
     const uint32_t tail = q.tail;
