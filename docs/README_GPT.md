@@ -262,6 +262,10 @@ This repo is a hardware sampler/performer. The main loop owns UI, controls, SD/f
 - Apply strategy: Load sets pending edit + starts WAV load; macro/mod state published immediately; audio applies via existing handoff once ready.
 - Where to look: `ui_requests.h` (SaveProject/LoadProject), `ui_worker.cpp` (`SaveProject`, `LoadProject`), `project_manifest.h` (fields), `app_state.h` (`project_status`, `project_edit_pending`), `ui_screens.cpp` (HUD menu + status), `ui_overlay.cpp` (SAVE line for WAV renders, not project).
 
+## Repo hygiene
+- Do not commit build/ or binaries.
+- Clean zip export: `git archive -o ADSR_V2_clean.zip HEAD`
+
 ## Where to look in code
 - main.cpp — control tick scheduling + ctrl_hz counter; ownership comments.
 - ui_logic.cpp — UI tick gate (`kUiTickMs`) and UI event drain.
