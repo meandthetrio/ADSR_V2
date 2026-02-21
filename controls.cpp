@@ -47,12 +47,19 @@ void Controls_Init(ControlsState& cs)
                     cs.hw->seed.GetPin(8),
                     cs.hw->seed.GetPin(22));
 
-    // Shift button wiring: D9 to GND (internal pull-up)
-    cs.shift_btn.Init(cs.hw->seed.GetPin(9),
-                      0.0f,
-                      Switch::Type::TYPE_MOMENTARY,
-                      Switch::Polarity::POLARITY_INVERTED,
-                      Switch::Pull::PULL_UP);
+    // RShift button wiring: D9 to GND (internal pull-up)
+    cs.rshift_btn.Init(cs.hw->seed.GetPin(9),
+                       0.0f,
+                       Switch::Type::TYPE_MOMENTARY,
+                       Switch::Polarity::POLARITY_INVERTED,
+                       Switch::Pull::PULL_UP);
+
+    // LShift button wiring: A1/D16 to GND (internal pull-up)
+    cs.lshift_btn.Init(cs.hw->seed.GetPin(16),
+                       0.0f,
+                       Switch::Type::TYPE_MOMENTARY,
+                       Switch::Polarity::POLARITY_INVERTED,
+                       Switch::Pull::PULL_UP);
 }
 
 void Controls_Tick(ControlsState& cs, AppState& app, uint32_t now_ms)
@@ -62,7 +69,8 @@ void Controls_Tick(ControlsState& cs, AppState& app, uint32_t now_ms)
 
     cs.hw->ProcessDigitalControls();
     cs.ext_enc.Debounce();
-    cs.shift_btn.Debounce();
+    cs.rshift_btn.Debounce();
+    cs.lshift_btn.Debounce();
 
     const bool b1_rise = cs.hw->button1.RisingEdge();
     const bool b1_fall = cs.hw->button1.FallingEdge();
@@ -78,12 +86,19 @@ void Controls_Tick(ControlsState& cs, AppState& app, uint32_t now_ms)
     if(b2_fall)
         PushEvent(app, MakeButtonEvent(UiInputType::BtnUp, kUiBtnPod2, now_ms));
 
-    const bool shift_rise = cs.shift_btn.RisingEdge();
-    const bool shift_fall = cs.shift_btn.FallingEdge();
-    if(shift_rise)
-        PushEvent(app, MakeButtonEvent(UiInputType::BtnDown, kUiBtnShift, now_ms));
-    if(shift_fall)
-        PushEvent(app, MakeButtonEvent(UiInputType::BtnUp, kUiBtnShift, now_ms));
+    const bool rshift_rise = cs.rshift_btn.RisingEdge();
+    const bool rshift_fall = cs.rshift_btn.FallingEdge();
+    if(rshift_rise)
+        PushEvent(app, MakeButtonEvent(UiInputType::BtnDown, kUiBtnRShift, now_ms));
+    if(rshift_fall)
+        PushEvent(app, MakeButtonEvent(UiInputType::BtnUp, kUiBtnRShift, now_ms));
+
+    const bool lshift_rise = cs.lshift_btn.RisingEdge();
+    const bool lshift_fall = cs.lshift_btn.FallingEdge();
+    if(lshift_rise)
+        PushEvent(app, MakeButtonEvent(UiInputType::BtnDown, kUiBtnLShift, now_ms));
+    if(lshift_fall)
+        PushEvent(app, MakeButtonEvent(UiInputType::BtnUp, kUiBtnLShift, now_ms));
 
     const bool enc_click = cs.hw->encoder.RisingEdge();
     if(enc_click)

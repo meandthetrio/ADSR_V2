@@ -15,7 +15,8 @@ enum UiInputButtonId : uint8_t
 {
     kUiBtnPod1 = 0,
     kUiBtnPod2,
-    kUiBtnShift,
+    kUiBtnLShift,
+    kUiBtnRShift,
     kUiBtnPodEnc,
     kUiBtnExtEnc,
     kUiBtnCount

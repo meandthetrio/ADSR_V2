@@ -10,7 +10,8 @@ struct ControlsState
 {
     daisy::DaisyPod* hw = nullptr;
     daisy::Encoder   ext_enc;
-    daisy::Switch    shift_btn;
+    daisy::Switch    rshift_btn;
+    daisy::Switch    lshift_btn;
 };
 
 void Controls_Init(ControlsState& cs);

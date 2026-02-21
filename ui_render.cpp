@@ -47,7 +47,10 @@ void UIRender::Render(const AppState& app, const Params& params)
     ctx.params = const_cast<Params*>(&params);
     ctx.display = &oled_pager_;
     ctx.now_ms = System::GetNow();
-    ctx.shift = app.ui_shift_held;
+    const bool shift_held = app.ui_lshift_held || app.ui_rshift_held;
+    ctx.shift = shift_held;
+    ctx.lshift = app.ui_lshift_held;
+    ctx.rshift = app.ui_rshift_held;
     UiRouter_Render(ctx);
 
     if(app.overlay.visible)

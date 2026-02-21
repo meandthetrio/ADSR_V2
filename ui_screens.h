@@ -25,6 +25,8 @@ struct UiScreenCtx
     OledPager* display = nullptr;
     uint32_t  now_ms = 0;
     bool      shift = false;
+    bool      lshift = false;
+    bool      rshift = false;
 };
 
 struct UiScreen

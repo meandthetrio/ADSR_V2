@@ -108,7 +108,8 @@ struct AppState
     UiScreenId ui_active_screen = UiScreenId::Hud;
     UiListMenu hud_menu{};
     bool     hud_menu_inited = false;
-    bool     ui_shift_held = false;
+    bool     ui_lshift_held = false;
+    bool     ui_rshift_held = false;
     bool     ui_btn1_held  = false;
     bool     ui_btn2_held  = false;
     UiValueEdit value_edit{};

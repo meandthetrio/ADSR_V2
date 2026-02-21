@@ -111,7 +111,10 @@ void UILogic::UiTick(AppState& app, Params& params, EventQueueSPSC& evtq, uint32
     ctx.params = &params;
     ctx.display = nullptr;
     ctx.now_ms = now_ms;
-    ctx.shift = app.ui_shift_held;
+    bool shift_held = app.ui_lshift_held || app.ui_rshift_held;
+    ctx.shift = shift_held;
+    ctx.lshift = app.ui_lshift_held;
+    ctx.rshift = app.ui_rshift_held;
 
     UiInputEvent e{};
     int processed = 0;
@@ -123,8 +126,10 @@ void UILogic::UiTick(AppState& app, Params& params, EventQueueSPSC& evtq, uint32
 
         if(e.type == UiInputType::BtnDown)
         {
-            if(e.id == kUiBtnShift)
-                app.ui_shift_held = true;
+            if(e.id == kUiBtnLShift)
+                app.ui_lshift_held = true;
+            else if(e.id == kUiBtnRShift)
+                app.ui_rshift_held = true;
             else if(e.id == kUiBtnPod1)
                 app.ui_btn1_held = true;
             else if(e.id == kUiBtnPod2)
@@ -132,15 +137,18 @@ void UILogic::UiTick(AppState& app, Params& params, EventQueueSPSC& evtq, uint32
         }
         else if(e.type == UiInputType::BtnUp)
         {
-            if(e.id == kUiBtnShift)
-                app.ui_shift_held = false;
+            if(e.id == kUiBtnLShift)
+                app.ui_lshift_held = false;
+            else if(e.id == kUiBtnRShift)
+                app.ui_rshift_held = false;
             else if(e.id == kUiBtnPod1)
                 app.ui_btn1_held = false;
             else if(e.id == kUiBtnPod2)
                 app.ui_btn2_held = false;
         }
 
-        if(!app.ui_shift_held && e.type == UiInputType::BtnDown && e.id == kUiBtnPod2)
+        shift_held = app.ui_lshift_held || app.ui_rshift_held;
+        if(!shift_held && e.type == UiInputType::BtnDown && e.id == kUiBtnPod2)
         {
             if(app.value_edit.active)
             {
@@ -154,7 +162,7 @@ void UILogic::UiTick(AppState& app, Params& params, EventQueueSPSC& evtq, uint32
             continue;
         }
 
-        if(app.ui_shift_held && e.type == UiInputType::BtnDown)
+        if(shift_held && e.type == UiInputType::BtnDown)
         {
             if(e.id == kUiBtnPod1)
             {
@@ -194,7 +202,9 @@ void UILogic::UiTick(AppState& app, Params& params, EventQueueSPSC& evtq, uint32
             }
         }
 
-        ctx.shift = app.ui_shift_held;
+        ctx.shift = shift_held;
+        ctx.lshift = app.ui_lshift_held;
+        ctx.rshift = app.ui_rshift_held;
         UiRouter_DispatchEvent(ctx, e);
     }
 
@@ -205,13 +215,17 @@ void UILogic::UiTick(AppState& app, Params& params, EventQueueSPSC& evtq, uint32
         const UiScreen& s = GetScreen(active_screen);
         if(s.OnEnter)
         {
-            ctx.shift = app.ui_shift_held;
+            shift_held = app.ui_lshift_held || app.ui_rshift_held;
+            ctx.shift = shift_held;
+            ctx.lshift = app.ui_lshift_held;
+            ctx.rshift = app.ui_rshift_held;
             s.OnEnter(ctx);
         }
         app.ui_dirty = true;
     }
 
-    UiOverlay_Update(app.overlay, now_ms, app.ui_shift_held, app.value_edit.active);
+    shift_held = app.ui_lshift_held || app.ui_rshift_held;
+    UiOverlay_Update(app.overlay, now_ms, shift_held, app.value_edit.active);
 
     app.ui_in_ovf = UiInput_Dropped(app.ui_in);
     app.ui_in_hi = UiInput_HighWater(app.ui_in);
